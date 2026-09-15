@@ -1,6 +1,7 @@
 package ktonpkg
 
 import (
+	"improvego/ktontest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -137,6 +138,8 @@ func TestRauteWritesAndReadsBack(t *testing.T) {
 }
 
 func TestVerifyCatchesATamperedPayload(t *testing.T) {
+	ktontest.Verifies(t, "sha256:b8908d281636b02c49d7d751d4cbd256e9fc7c03ec9f147a20afc8cbd5464780",
+		"ein Paket pr\u00fcft sich ohne Repository: Hash, Kante, Loch")
 	b := raute(t)
 	if err := b.Write(); err != nil {
 		t.Fatal(err)
@@ -156,6 +159,8 @@ func TestVerifyCatchesATamperedPayload(t *testing.T) {
 }
 
 func TestVerifyCatchesAMissingFileAndADanglingEdge(t *testing.T) {
+	ktontest.Verifies(t, "sha256:b8908d281636b02c49d7d751d4cbd256e9fc7c03ec9f147a20afc8cbd5464780",
+		"ein Paket pr\u00fcft sich ohne Repository: Hash, Kante, Loch")
 	b := raute(t)
 	b.Ray.Steps[2].Inputs[1].From = FromUpstream + "gibtesnicht:daten.txt"
 	b.Ray.Steps[3].Inputs[0].Path = "scripts/weg.sh"
@@ -176,6 +181,8 @@ func TestVerifyCatchesAMissingFileAndADanglingEdge(t *testing.T) {
 }
 
 func TestVerifyCatchesAnUndeclaredHole(t *testing.T) {
+	ktontest.Verifies(t, "sha256:b8908d281636b02c49d7d751d4cbd256e9fc7c03ec9f147a20afc8cbd5464780",
+		"ein Paket pr\u00fcft sich ohne Repository: Hash, Kante, Loch")
 	b := raute(t)
 	b.Ray.Holes = b.Ray.Holes[:1] // "anzahl" entfernen, Parameter bleibt stehen
 	if err := b.Write(); err != nil {
