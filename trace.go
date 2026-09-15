@@ -171,20 +171,22 @@ func (b *Bundle) Abdeckungen() ([]Abdeckung, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Die Steps nennen Anforderungen über ihren Hash. Hier wird auf den
+	// Gegenstand gebunden, nicht auf eine Kennung.
 	durch := map[string][]string{}
 	if b.Ray != nil {
 		steps := append([]Step(nil), b.Ray.Steps...)
 		sort.Slice(steps, func(i, j int) bool { return steps[i].ID < steps[j].ID })
 		for _, s := range steps {
-			for _, k := range s.Verifies {
-				durch[k] = append(durch[k], s.ID)
+			for _, h := range s.Verifies {
+				durch[h] = append(durch[h], s.ID)
 			}
 		}
 	}
 
 	out := make([]Abdeckung, 0, len(anf))
 	for _, a := range anf {
-		ab := Abdeckung{Anforderung: a, By: durch[a.Key]}
+		ab := Abdeckung{Anforderung: a, By: durch[a.Hash]}
 		switch {
 		case len(ab.By) > 0:
 			ab.Zustand, ab.Belegt = "hier", true
@@ -243,17 +245,27 @@ func (b *Bundle) verifyVerifies() []Problem {
 	if err != nil {
 		return []Problem{{Message: err.Error()}}
 	}
-	da := map[string]bool{}
+	da := map[string]string{}
 	for _, a := range anf {
-		da[a.Key] = true
+		da[a.Hash] = a.Key
 	}
 	var out []Problem
 	for _, s := range b.Ray.Steps {
-		for _, k := range s.Verifies {
-			if !da[k] {
+		for _, h := range s.Verifies {
+			if !IsContentHash(h) {
 				out = append(out, Problem{Step: s.ID,
-					Message: fmt.Sprintf("der Step löst %q ein — diese Anforderung "+
-						"steht in keinem Dokument dieses Pakets", k)})
+					Message: fmt.Sprintf("%q ist kein Inhaltshash — eine Anforderung "+
+						"wird über ihren Inhalt benannt, nicht über ihre Kennung: "+
+						"sonst zeigt der Nachweis nach einer Änderung still auf "+
+						"einen anderen Wortlaut", h)})
+				continue
+			}
+			if _, ok := da[h]; !ok {
+				out = append(out, Problem{Step: s.ID,
+					Message: fmt.Sprintf("der Step löst %s ein — mit diesem Inhalt "+
+						"liegt keine Anforderung im Paket. Entweder hat sich ihr "+
+						"Wortlaut geändert, dann ist der Nachweis neu zu führen, "+
+						"oder sie fehlt", kurzHash(h))})
 			}
 		}
 	}

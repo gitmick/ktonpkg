@@ -735,31 +735,43 @@ func TestTreeIDIstUnabhaengigVomOrt(t *testing.T) {
 	}
 }
 
-// Die Rückverfolgung hat genau eine Quelle je Tatsache: das Dokument sagt,
-// was verlangt ist und wer es außerhalb belegt; der Step sagt, was er
-// einlöst. Nichts steht zweimal — der erste Versuch, eine `trace.json` neben
-// den Dokumenten, war genau die Matrix, die in jedem QM auseinanderläuft.
-func TestAbdeckungLiestAusEinerQuelleJeTatsache(t *testing.T) {
+// Eine Anforderung ist eine Datei, und der Step nennt sie über ihren
+// **Inhalt**. Hinge die Verbindung an der Kennung, könnte jemand den Wortlaut
+// ändern und der Nachweis zeigte still auf einen anderen Satz.
+func anforderungspaket(t *testing.T) (*Bundle, map[string]string) {
+	t.Helper()
 	dir := t.TempDir()
 	b := New(dir, KindRay, "beispiel")
-	b.Ray.Steps = []Step{
-		{ID: "rechnen", Verifies: []string{"FS-1"},
-			Protocol: Protocol{Command: &Command{Args: "bild\n<command-file>"}}},
-	}
+	b.Ray.Steps = []Step{{ID: "rechnen",
+		Protocol: Protocol{Command: &Command{Args: "bild\n<command-file>"}}}}
 	if err := b.Write(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.AddFile("requirements/URS.md",
-		[]byte("**URS-1** Etwas soll gehen.\n→ FS-1, FS-2\n")); err != nil {
-		t.Fatal(err)
+	hashes := map[string]string{}
+	schreib := func(rel, body string) {
+		h, err := b.AddFile(rel, []byte(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		hashes[rel] = h
 	}
-	if _, err := b.AddFile("specification/FS.md", []byte(
-		"**FS-1** Es rechnet.\n← URS-1\n**(OQ)**\n\n"+
-			"**FS-2** Es weigert sich ohne Wert.\n← URS-1\n"+
-			"Beleg: `ValidateBindings` — das Ausbleiben eines Laufs. **(OQ)**\n")); err != nil {
-		t.Fatal(err)
-	}
+	schreib("requirements/URS-1.md",
+		"---\nkey: URS-1\ntype: requirements\n---\n\nEtwas soll gehen.\n")
+	schreib("specification/FS-1.md",
+		"---\nkey: FS-1\ntype: specification\nsatisfies: [URS-1]\nstage: OQ\n---\n\nEs rechnet.\n")
+	schreib("specification/FS-2.md",
+		"---\nkey: FS-2\ntype: specification\nsatisfies: [URS-1]\nstage: OQ\n"+
+			"evidence: \"ValidateBindings — das Ausbleiben eines Laufs\"\n---\n\n"+
+			"Es weigert sich ohne Wert.\n")
+	return b, hashes
+}
 
+func TestStepNenntDieAnforderungUeberIhrenInhalt(t *testing.T) {
+	b, h := anforderungspaket(t)
+	b.Ray.Steps[0].Verifies = []string{h["specification/FS-1.md"]}
+	if err := b.Write(); err != nil {
+		t.Fatal(err)
+	}
 	ab, err := b.Abdeckungen()
 	if err != nil {
 		t.Fatal(err)
@@ -774,24 +786,63 @@ func TestAbdeckungLiestAusEinerQuelleJeTatsache(t *testing.T) {
 	if got := stand["FS-2"]; got.Zustand != "anderswo" || got.Evidence == "" {
 		t.Fatalf("FS-2 sollte anderswo belegt sein, ist %+v", got)
 	}
-	// Und das V schließt sich nach oben, ohne dass jemand es hinschreibt.
+	// Das V schließt sich nach oben, ohne dass jemand es hinschreibt: die
+	// Gegenrichtung von `satisfies` wird gerechnet.
 	if got := stand["URS-1"]; !got.Belegt || got.Zustand != "über die Zerlegung" {
 		t.Fatalf("URS-1 sollte über FS-1 und FS-2 belegt sein, ist %+v", got)
 	}
 }
 
-// Teilerfüllung ist Nichterfüllung — auch hier.
-func TestEineOffeneZerlegungLaesstDieAnforderungOffen(t *testing.T) {
-	dir := t.TempDir()
-	b := New(dir, KindRay, "beispiel")
-	b.Ray.Steps = []Step{{ID: "rechnen", Verifies: []string{"FS-1"},
-		Protocol: Protocol{Command: &Command{Args: "bild\n<command-file>"}}}}
+// Ändert sich der Wortlaut, bricht die Verbindung auf — laut, nicht still.
+func TestEinGeaenderterWortlautBrichtDenNachweis(t *testing.T) {
+	b, h := anforderungspaket(t)
+	b.Ray.Steps[0].Verifies = []string{h["specification/FS-1.md"]}
 	if err := b.Write(); err != nil {
 		t.Fatal(err)
 	}
-	b.AddFile("requirements/URS.md", []byte("**URS-1** Etwas.\n→ FS-1, FS-2\n"))
-	b.AddFile("specification/FS.md", []byte("**FS-1** Eins.\n\n**FS-2** Zwei.\n"))
+	if len(b.verifyVerifies()) != 0 {
+		t.Fatal("der Nachweis sollte zunächst halten")
+	}
+	if _, err := b.AddFile("specification/FS-1.md",
+		[]byte("---\nkey: FS-1\ntype: specification\nsatisfies: [URS-1]\n---\n\n"+
+			"Es rechnet — und zwar richtig.\n")); err != nil {
+		t.Fatal(err)
+	}
+	if len(b.verifyVerifies()) == 0 {
+		t.Fatal("ein geänderter Wortlaut hat den Nachweis nicht gebrochen — " +
+			"dann wäre etwas belegt, das niemand geprüft hat")
+	}
+}
 
+// Eine Kennung im `verifies` wird abgelehnt: sie identifiziert nichts.
+func TestKennungImVerifiesWirdAbgelehnt(t *testing.T) {
+	b, _ := anforderungspaket(t)
+	b.Ray.Steps[0].Verifies = []string{"FS-1"}
+	if err := b.Write(); err != nil {
+		t.Fatal(err)
+	}
+	var gefunden bool
+	for _, p := range b.verifyVerifies() {
+		if strings.Contains(p.Message, "kein Inhaltshash") {
+			gefunden = true
+		}
+	}
+	if !gefunden {
+		t.Fatal("eine Kennung statt eines Inhaltshashes wurde nicht beanstandet")
+	}
+}
+
+// Teilerfüllung ist Nichterfüllung — auch hier.
+func TestEineOffeneZerlegungLaesstDieAnforderungOffen(t *testing.T) {
+	b, h := anforderungspaket(t)
+	if _, err := b.AddFile("specification/FS-2.md",
+		[]byte("---\nkey: FS-2\ntype: specification\nsatisfies: [URS-1]\n---\n\nOffen.\n")); err != nil {
+		t.Fatal(err)
+	}
+	b.Ray.Steps[0].Verifies = []string{h["specification/FS-1.md"]}
+	if err := b.Write(); err != nil {
+		t.Fatal(err)
+	}
 	ab, err := b.Abdeckungen()
 	if err != nil {
 		t.Fatal(err)
@@ -800,32 +851,6 @@ func TestEineOffeneZerlegungLaesstDieAnforderungOffen(t *testing.T) {
 		if a.Key == "URS-1" && a.Belegt {
 			t.Fatal("URS-1 gilt als belegt, obwohl FS-2 offen ist")
 		}
-		if a.Key == "FS-2" && a.Zustand != "offen" {
-			t.Fatalf("FS-2 sollte offen sein, ist %q", a.Zustand)
-		}
-	}
-}
-
-// Ein Step, der eine Anforderung einlöst, die es nicht gibt, ist schlimmer
-// als keine Rückverfolgung: er sieht aus wie ein Nachweis.
-func TestStepDarfNurVorhandeneAnforderungenEinloesen(t *testing.T) {
-	dir := t.TempDir()
-	b := New(dir, KindRay, "beispiel")
-	b.Ray.Steps = []Step{{ID: "rechnen", Verifies: []string{"FS-9"},
-		Protocol: Protocol{Command: &Command{Args: "bild\n<command-file>"}}}}
-	if err := b.Write(); err != nil {
-		t.Fatal(err)
-	}
-	b.AddFile("specification/FS.md", []byte("**FS-1** Eins.\n"))
-
-	var gefunden bool
-	for _, p := range b.verifyVerifies() {
-		if strings.Contains(p.Message, "FS-9") {
-			gefunden = true
-		}
-	}
-	if !gefunden {
-		t.Fatal("ein erfundener Anforderungsverweis wurde nicht gemeldet")
 	}
 }
 
@@ -849,7 +874,8 @@ func TestRueckverfolgungAendertFassungNichtPotential(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	b.Ray.Steps[0].Verifies = []string{"FS-1"}
+	b.Ray.Steps[0].Verifies = []string{
+		"sha256:0000000000000000000000000000000000000000000000000000000000000001"}
 	if err := b.Write(); err != nil {
 		t.Fatal(err)
 	}

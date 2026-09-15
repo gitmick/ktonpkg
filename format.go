@@ -69,10 +69,21 @@ type Step struct {
 	Params    map[string]string `json:"params,omitempty"`
 	Inputs    []Input           `json:"inputs"`
 	Outputs   []string          `json:"outputs,omitempty"`
-	// Verifies nennt die Anforderungen, die dieser Step einlöst — wie eine
-	// Testannotation, und aus demselben Grund: die Verbindung steht dort, wo
-	// der Nachweis entsteht. Sie geht **nicht** in die Foton-Identität ein
-	// (sie ändert keine Berechnung), wohl aber in die Paketfassung.
+	// Verifies nennt die Anforderungen, die dieser Step einlöst — über ihren
+	// **Inhaltshash**, nicht über ihre Kennung.
+	//
+	// Der Unterschied ist der ganze Punkt. Hinge die Verbindung an "FS-4",
+	// könnte jemand den Wortlaut der Anforderung ändern, und der Nachweis
+	// zeigte still auf etwas anderes — belegt wäre dann ein Satz, den niemand
+	// geprüft hat. Am Hash bricht die Verbindung stattdessen auf, und das ist
+	// das richtige Verhalten: der Lauf hat den alten Wortlaut eingelöst, nicht
+	// den neuen.
+	//
+	// Die Kennung bleibt, was sie ist: ein Griff für Menschen, im Frontmatter
+	// der Datei. Sie identifiziert nichts.
+	//
+	// Verifies geht **nicht** in die Foton-Identität ein (es ändert keine
+	// Berechnung), wohl aber in die Paketfassung.
 	Verifies []string `json:"verifies,omitempty"`
 	// Parent ist ein übergeordneter Step, wo die Ablage das verlangt.
 	Parent string `json:"parent,omitempty"`
