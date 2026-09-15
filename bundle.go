@@ -711,3 +711,76 @@ func (b *Bundle) checkTestdaten(add func(step, slot, msg string)) {
 		}
 	}
 }
+
+// TreeID ist die Identität einer **Menge von Dateien**, gerechnet wie die
+// Nutzlast eines Pakets: je Datei Pfad und Inhaltshash, sortiert, kanonisch,
+// einmal gehasht.
+//
+// Warum das und nicht ein Commit: ein Commit-Hash benennt einen Stand **in
+// einem Repository**. Wer ihn prüfen will, braucht das Repository. Ein
+// Inhaltshash benennt die Bytes selbst — er gilt für jede Kopie, an jedem Ort,
+// ohne Herkunft und ohne Dienst dazwischen. Das ist die ganze Idee: Identität
+// am Inhalt, Speicherort gleichgültig.
+//
+// `skip` nimmt den relativen Pfad und sagt, was nicht mitzählt — Gebautes,
+// Zwischenstände, die Buchhaltung einer Versionsverwaltung.
+func TreeID(dir string, skip func(rel string) bool) (string, error) {
+	var refs []any
+	err := filepath.Walk(dir, func(p string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(dir, p)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		if rel == "." {
+			return nil
+		}
+		if skip != nil && skip(rel) {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if info.IsDir() {
+			return nil
+		}
+		body, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		refs = append(refs, map[string]any{"path": rel, "hash": core.HashBytes(body)})
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	if len(refs) == 0 {
+		return "", fmt.Errorf("%s enthält keine Dateien", dir)
+	}
+	sort.Slice(refs, func(i, j int) bool {
+		return refs[i].(map[string]any)["path"].(string) <
+			refs[j].(map[string]any)["path"].(string)
+	})
+	raw, err := core.CanonValue(map[string]any{"files": refs})
+	if err != nil {
+		return "", err
+	}
+	return core.HashBytes(raw), nil
+}
+
+// SkipBuildArtefacts ist die übliche Auswahl: die Buchhaltung der
+// Versionsverwaltung und was gebaut wurde. Beides ist Ableitung, nicht Quelle.
+func SkipBuildArtefacts(rel string) bool {
+	switch {
+	case rel == ".git" || strings.HasPrefix(rel, ".git/"):
+		return true
+	case rel == "bin" || strings.HasPrefix(rel, "bin/"):
+		return true
+	case strings.HasSuffix(rel, "~"), strings.HasSuffix(rel, ".exe"):
+		return true
+	}
+	return false
+}

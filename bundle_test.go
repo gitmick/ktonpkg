@@ -663,3 +663,74 @@ func TestNurRaysBrauchenTestdaten(t *testing.T) {
 		}
 	}
 }
+
+// Der Punkt von TreeID: dieselben Bytes an einem anderen Ort sind dieselbe
+// Identität. Ein Commit-Hash kann das nicht — er benennt einen Stand in einem
+// Repository, und ohne das Repository ist er nicht prüfbar.
+func TestTreeIDIstUnabhaengigVomOrt(t *testing.T) {
+	schreib := func(dir string) {
+		if err := os.MkdirAll(filepath.Join(dir, "cmd", "x"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for rel, body := range map[string]string{
+			"go.mod":        "module beispiel\n",
+			"cmd/x/main.go": "package main\n\nfunc main() {}\n",
+			"kleines.txt":   "etwas\n",
+		} {
+			if err := os.WriteFile(filepath.Join(dir, filepath.FromSlash(rel)),
+				[]byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	a, b := t.TempDir(), t.TempDir()
+	schreib(a)
+	schreib(b)
+
+	ida, err := TreeID(a, SkipBuildArtefacts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idb, err := TreeID(b, SkipBuildArtefacts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ida != idb {
+		t.Fatalf("zwei Kopien, zwei Kennungen: %s vs %s", ida, idb)
+	}
+
+	// Gebautes und die Buchhaltung der Versionsverwaltung zählen nicht mit —
+	// sonst hinge die Identität der Quelle daran, ob jemand gebaut hat.
+	if err := os.MkdirAll(filepath.Join(b, ".git", "objects"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(b, ".git", "objects", "irgendwas"),
+		[]byte("blob"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(b, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(b, "bin", "x"), []byte("ELF"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	nach, err := TreeID(b, SkipBuildArtefacts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nach != ida {
+		t.Fatal("Gebautes oder .git hat die Identität der Quelle verändert")
+	}
+
+	// Eine echte Änderung dagegen muss sie verändern.
+	if err := os.WriteFile(filepath.Join(b, "kleines.txt"), []byte("anders\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	geaendert, err := TreeID(b, SkipBuildArtefacts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if geaendert == ida {
+		t.Fatal("eine geänderte Datei hat die Identität nicht verändert")
+	}
+}
