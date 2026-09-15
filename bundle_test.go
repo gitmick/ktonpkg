@@ -734,3 +734,139 @@ func TestTreeIDIstUnabhaengigVomOrt(t *testing.T) {
 		t.Fatal("eine geänderte Datei hat die Identität nicht verändert")
 	}
 }
+
+// Die Rückverfolgung hat genau eine Quelle je Tatsache: das Dokument sagt,
+// was verlangt ist und wer es außerhalb belegt; der Step sagt, was er
+// einlöst. Nichts steht zweimal — der erste Versuch, eine `trace.json` neben
+// den Dokumenten, war genau die Matrix, die in jedem QM auseinanderläuft.
+func TestAbdeckungLiestAusEinerQuelleJeTatsache(t *testing.T) {
+	dir := t.TempDir()
+	b := New(dir, KindRay, "beispiel")
+	b.Ray.Steps = []Step{
+		{ID: "rechnen", Verifies: []string{"FS-1"},
+			Protocol: Protocol{Command: &Command{Args: "bild\n<command-file>"}}},
+	}
+	if err := b.Write(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.AddFile("requirements/URS.md",
+		[]byte("**URS-1** Etwas soll gehen.\n→ FS-1, FS-2\n")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.AddFile("specification/FS.md", []byte(
+		"**FS-1** Es rechnet.\n← URS-1\n**(OQ)**\n\n"+
+			"**FS-2** Es weigert sich ohne Wert.\n← URS-1\n"+
+			"Beleg: `ValidateBindings` — das Ausbleiben eines Laufs. **(OQ)**\n")); err != nil {
+		t.Fatal(err)
+	}
+
+	ab, err := b.Abdeckungen()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stand := map[string]Abdeckung{}
+	for _, a := range ab {
+		stand[a.Key] = a
+	}
+	if got := stand["FS-1"]; got.Zustand != "hier" || len(got.By) != 1 || got.Stage != "OQ" {
+		t.Fatalf("FS-1 sollte hier belegt sein (OQ), ist %+v", got)
+	}
+	if got := stand["FS-2"]; got.Zustand != "anderswo" || got.Evidence == "" {
+		t.Fatalf("FS-2 sollte anderswo belegt sein, ist %+v", got)
+	}
+	// Und das V schließt sich nach oben, ohne dass jemand es hinschreibt.
+	if got := stand["URS-1"]; !got.Belegt || got.Zustand != "über die Zerlegung" {
+		t.Fatalf("URS-1 sollte über FS-1 und FS-2 belegt sein, ist %+v", got)
+	}
+}
+
+// Teilerfüllung ist Nichterfüllung — auch hier.
+func TestEineOffeneZerlegungLaesstDieAnforderungOffen(t *testing.T) {
+	dir := t.TempDir()
+	b := New(dir, KindRay, "beispiel")
+	b.Ray.Steps = []Step{{ID: "rechnen", Verifies: []string{"FS-1"},
+		Protocol: Protocol{Command: &Command{Args: "bild\n<command-file>"}}}}
+	if err := b.Write(); err != nil {
+		t.Fatal(err)
+	}
+	b.AddFile("requirements/URS.md", []byte("**URS-1** Etwas.\n→ FS-1, FS-2\n"))
+	b.AddFile("specification/FS.md", []byte("**FS-1** Eins.\n\n**FS-2** Zwei.\n"))
+
+	ab, err := b.Abdeckungen()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range ab {
+		if a.Key == "URS-1" && a.Belegt {
+			t.Fatal("URS-1 gilt als belegt, obwohl FS-2 offen ist")
+		}
+		if a.Key == "FS-2" && a.Zustand != "offen" {
+			t.Fatalf("FS-2 sollte offen sein, ist %q", a.Zustand)
+		}
+	}
+}
+
+// Ein Step, der eine Anforderung einlöst, die es nicht gibt, ist schlimmer
+// als keine Rückverfolgung: er sieht aus wie ein Nachweis.
+func TestStepDarfNurVorhandeneAnforderungenEinloesen(t *testing.T) {
+	dir := t.TempDir()
+	b := New(dir, KindRay, "beispiel")
+	b.Ray.Steps = []Step{{ID: "rechnen", Verifies: []string{"FS-9"},
+		Protocol: Protocol{Command: &Command{Args: "bild\n<command-file>"}}}}
+	if err := b.Write(); err != nil {
+		t.Fatal(err)
+	}
+	b.AddFile("specification/FS.md", []byte("**FS-1** Eins.\n"))
+
+	var gefunden bool
+	for _, p := range b.verifyVerifies() {
+		if strings.Contains(p.Message, "FS-9") {
+			gefunden = true
+		}
+	}
+	if !gefunden {
+		t.Fatal("ein erfundener Anforderungsverweis wurde nicht gemeldet")
+	}
+}
+
+// Die Rückverfolgung zählt zur Fassung, nicht zum Potential: wer sie lockert,
+// hat ein anderes Paket — aber nicht eine andere Berechnung, und ein
+// angenommenes OQ überlebt es.
+func TestRueckverfolgungAendertFassungNichtPotential(t *testing.T) {
+	dir := t.TempDir()
+	b := New(dir, KindRay, "beispiel")
+	b.Ray.Steps = []Step{{ID: "rechnen",
+		Protocol: Protocol{Command: &Command{Args: "bild\n<command-file>"}}}}
+	if err := b.Write(); err != nil {
+		t.Fatal(err)
+	}
+	fassungVorher, err := b.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	potentialVorher, err := b.Ray.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	b.Ray.Steps[0].Verifies = []string{"FS-1"}
+	if err := b.Write(); err != nil {
+		t.Fatal(err)
+	}
+	fassung, err := b.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	potential, err := b.Ray.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fassung == fassungVorher {
+		t.Fatal("die Fassung hat sich durch die Rückverfolgung nicht geändert — " +
+			"dann ließe sie sich still lockern")
+	}
+	if potential != potentialVorher {
+		t.Fatal("das Potential hat sich geändert — die Berechnung ist dieselbe " +
+			"geblieben, ein angenommenes OQ müsste sie überleben")
+	}
+}

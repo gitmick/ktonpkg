@@ -343,6 +343,7 @@ func (b *Bundle) Verify() []Problem {
 		}
 	}
 
+	out = append(out, b.verifyVerifies()...)
 	if b.Spectrum != nil {
 		out = append(out, b.verifySpectrum()...)
 	}
@@ -528,6 +529,16 @@ func (b *Bundle) ID() (string, error) {
 			return "", err
 		}
 		m["requires"] = core.HashBytes(rb)
+	}
+	// Die Rückverfolgung zählt zur Fassung, nicht zum Potential: wer sie
+	// lockert, hat ein anderes Paket — aber nicht eine andere Berechnung, und
+	// ein angenommenes OQ überlebt es. Dieselbe Regel wie für Dokumentation.
+	if v, hat := b.Ray.VerifiesHash(); hat {
+		vb, err := core.CanonValue(v)
+		if err != nil {
+			return "", err
+		}
+		m["verifies"] = core.HashBytes(vb)
 	}
 	if b.Spectrum != nil {
 		sb, err := core.CanonValue(b.Spectrum)

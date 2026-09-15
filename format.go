@@ -69,6 +69,11 @@ type Step struct {
 	Params    map[string]string `json:"params,omitempty"`
 	Inputs    []Input           `json:"inputs"`
 	Outputs   []string          `json:"outputs,omitempty"`
+	// Verifies nennt die Anforderungen, die dieser Step einlöst — wie eine
+	// Testannotation, und aus demselben Grund: die Verbindung steht dort, wo
+	// der Nachweis entsteht. Sie geht **nicht** in die Foton-Identität ein
+	// (sie ändert keine Berechnung), wohl aber in die Paketfassung.
+	Verifies []string `json:"verifies,omitempty"`
 	// Parent ist ein übergeordneter Step, wo die Ablage das verlangt.
 	Parent string `json:"parent,omitempty"`
 }
