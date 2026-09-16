@@ -26,11 +26,15 @@ func testSigner(t *testing.T) *Signer {
 
 // Die Wire-Form ist die der SPEC: ein in-toto-Statement mit dem
 // Claim-Prädikatstyp, verpackt in einen DSSE-Umschlag.
+// Die Prädikate hier sind **Platzhalter** unter `example.org`. Geprüft wird
+// der Umschlag, nicht das Vokabular — und ein abgeschaffter Term im Test sähe
+// aus, als gäbe es ihn noch.
+
 func TestSignedClaimIsAnInTotoStatement(t *testing.T) {
 	s := testSigner(t)
 	signed, err := s.Sign(Claim{
 		Subject:   Ref{Hash: "sha256:" + beispielHash, Name: "raute"},
-		Predicate: "https://improve.scinteco.com/terms/runs-on",
+		Predicate: "https://example.org/ns/probe#ranOn",
 		Object:    map[string]any{"tool": "jam-r"},
 		By:        "michael", When: "2026-09-14T08:20:00Z",
 	})
@@ -64,7 +68,7 @@ func TestClaimSurvivesTheRoundTrip(t *testing.T) {
 	s := testSigner(t)
 	c := Claim{
 		Subject:   Ref{Hash: "sha256:" + beispielHash, Name: "jam-r"},
-		Predicate: "https://improve.scinteco.com/terms/qualifies-as",
+		Predicate: "https://example.org/ns/probe#qualifiesAs",
 		Object:    map[string]any{"spectrum": "jam-r", "level": "L0"},
 		By:        "toolinstall", When: "2026-09-14T08:20:00Z",
 		Why:      "alle Member reproduziert",
@@ -120,7 +124,7 @@ func TestTamperedClaimIsRefused(t *testing.T) {
 	b := raute(t)
 	if err := b.AddClaim(testSigner(t), Claim{
 		Subject:   Ref{Hash: "sha256:" + beispielHash, Name: "raute"},
-		Predicate: "https://improve.scinteco.com/terms/runs-on",
+		Predicate: "https://example.org/ns/probe#ranOn",
 		Object:    map[string]any{"tool": "jam-r"},
 		By:        "michael",
 	}); err != nil {
@@ -214,7 +218,7 @@ func TestClaimFromAnotherVersionIsReported(t *testing.T) {
 	b := raute(t)
 	if err := b.AddClaim(testSigner(t), Claim{
 		Subject:   Ref{Hash: "sha256:" + beispielHash, Name: "eine andere Fassung"},
-		Predicate: "https://improve.scinteco.com/terms/runs-on",
+		Predicate: "https://example.org/ns/probe#ranOn",
 		By:        "irgendwer",
 	}); err != nil {
 		t.Fatal(err)
@@ -243,7 +247,7 @@ func TestClaimAboutThisPackageIsFine(t *testing.T) {
 	}
 	if err := b.AddClaim(testSigner(t), Claim{
 		Subject:   Ref{Hash: id, Name: "raute"},
-		Predicate: "https://improve.scinteco.com/terms/runs-on",
+		Predicate: "https://example.org/ns/probe#ranOn",
 		By:        "michael",
 	}); err != nil {
 		t.Fatal(err)

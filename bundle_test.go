@@ -351,7 +351,7 @@ func TestClaimsTravelWithThePackage(t *testing.T) {
 	}
 	if err := b.AddClaim(testSigner(t), Claim{
 		Subject:   Ref{Hash: id, Name: "raute"},
-		Predicate: "https://improve.scinteco.com/terms/runs-on",
+		Predicate: "https://example.org/ns/probe#ranOn",
 		Object:    map[string]any{"runserver": "default", "tool": "bash"},
 		By:        "michael", When: "2026-09-14T08:20:00Z",
 	}); err != nil {
