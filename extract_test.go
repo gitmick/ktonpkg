@@ -304,3 +304,70 @@ func TestExtract_ConflictingWiringIsNotExtracted(t *testing.T) {
 	}
 	_ = os.Remove
 }
+
+// Eine zweite Ausführung derselben Berechnung mit denselben Bytes — anderswo, von jemand anderem —
+// ist eine Reproduktion, kein zweiter Step. Ohne das verbände sie über ihre Ausgaben zwei Läufe, und
+// jeder Step käme doppelt vor.
+func TestPropose_ReproductionsAreNotSteps(t *testing.T) {
+	execs, _ := twoRuns(t)
+	var again []Execution
+	for _, e := range execs {
+		if strings.HasPrefix(e.ID, "sha256:a-") {
+			r := e
+			r.ID = strings.Replace(e.ID, "sha256:a-", "sha256:c-", 1)
+			r.Name = e.Name + "-woanders"
+			again = append(again, r)
+		}
+	}
+	p, err := Propose(append(execs, again...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Runs) != 2 || len(p.Steps) != 4 || len(p.Conflicts) != 0 {
+		t.Fatalf("2 Läufe, 4 Steps, keine Konflikte erwartet — bekam %d, %d, %v", len(p.Runs), len(p.Steps), p.Conflicts)
+	}
+	n := 0
+	for _, dups := range p.Reproductions {
+		n += len(dups)
+	}
+	if n != 4 {
+		t.Fatalf("vier Reproduktionen erwartet, bekam %v", p.Reproductions)
+	}
+}
+
+// Dieselben Ausführungen ergeben dasselbe Paket — auch wenn der Vorschlag die Läufe anders nummeriert.
+// Die Nummer hängt davon ab, wie Foton-Ids sortieren, und die unterscheiden sich zwischen Backends.
+func TestExtract_TheRunLabelDoesNotReachThePackageIdentity(t *testing.T) {
+	execs, store := twoRuns(t)
+	choice := func(p *Proposal, ref string) Choice {
+		return Choice{Name: "x", Reference: ref,
+			Holes:  []HoleChoice{{Name: "dataset", Step: "aufbereitung", Slot: "dataset.csv"}},
+			Params: []ParamChoice{{Name: "anzahl", Step: "zweig-b", Position: 2}}}
+	}
+	p1, _ := Propose(execs)
+	b1, err := Extract(p1, execs, choice(p1, refRun(t, p1, execs, "sha256:a-")), fetchFrom(store), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Dieselben Ausführungen, die Ids so umbenannt, dass der a-Lauf jetzt als zweiter sortiert.
+	var renamed []Execution
+	for _, e := range execs {
+		r := e
+		r.ID = strings.Replace(strings.Replace(e.ID, "sha256:a-", "sha256:z-", 1), "sha256:b-", "sha256:c-", 1)
+		renamed = append(renamed, r)
+	}
+	p2, _ := Propose(renamed)
+	ref := refRun(t, p2, renamed, "sha256:z-")
+	if ref == refRun(t, p1, execs, "sha256:a-") {
+		t.Fatalf("der Test braucht eine andere Nummerierung, bekam beide Male %s", ref)
+	}
+	b2, err := Extract(p2, renamed, choice(p2, ref), fetchFrom(store), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	id1, _ := b1.ID()
+	id2, _ := b2.ID()
+	if id1 != id2 {
+		t.Fatalf("dasselbe Paket erwartet, bekam %s und %s (of: %q / %q)", id1, id2, b1.Spectrum.Of, b2.Spectrum.Of)
+	}
+}

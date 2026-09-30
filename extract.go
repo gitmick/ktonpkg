@@ -57,6 +57,10 @@ type Proposal struct {
 	Steps  []ProposedStep   `json:"steps"`
 	Files  []FileCandidate  `json:"files"`
 	Params []ParamCandidate `json:"params"`
+	// Reproductions nennt Ausführungen, die dieselbe Berechnung mit denselben Bytes noch einmal
+	// waren: gleicher Code, gleiche Befehlszeile, gleiche Ein- und Ausgaben. Sie sind kein eigener
+	// Step; gezählt wird je Step eine, die kleinste Id, und die anderen stehen hier.
+	Reproductions map[string][]string `json:"reproductions,omitempty"`
 	// Conflicts nennt, was sich nicht zu einem Step fügt — eine Kante, die in einem Lauf besteht
 	// und im anderen nicht, eine Befehlszeile anderer Länge. Mit Konflikten extrahiert Extract
 	// nicht.
@@ -132,6 +136,23 @@ func Propose(execs []Execution) (*Proposal, error) {
 		byID[e.ID] = e
 	}
 
+	// Reproduktionen zusammenfassen, bevor irgendetwas gezählt wird: sonst verbindet ein zweiter
+	// Erzeuger derselben Bytes zwei Läufe zu einem, und jeder Step kommt darin doppelt vor.
+	p := &Proposal{}
+	seenCalc := map[string]string{}
+	for _, id := range sortedKeysExec(byID) {
+		k := calculation(byID[id])
+		if kept, dup := seenCalc[k]; dup {
+			if p.Reproductions == nil {
+				p.Reproductions = map[string][]string{}
+			}
+			p.Reproductions[kept] = append(p.Reproductions[kept], id)
+			delete(byID, id)
+			continue
+		}
+		seenCalc[k] = id
+	}
+
 	// Wer hat welchen Hash erzeugt. Mehrere Erzeuger desselben Hashes sind Reproduktionen; für die
 	// Verdrahtung genügt einer, und genommen wird deterministisch der kleinste — aber nie der
 	// Verbraucher selbst: ein Step, der seine Eingabe unverändert weitergibt, hat dieselben Bytes als
@@ -139,7 +160,6 @@ func Propose(execs []Execution) (*Proposal, error) {
 	producer := producers(byID)
 
 	runs := components(byID, producer)
-	p := &Proposal{}
 	runOf := map[string]string{}
 	for i, members := range runs {
 		r := Run{ID: fmt.Sprintf("run-%d", i+1), Executions: members}
@@ -358,7 +378,11 @@ func Extract(p *Proposal, execs []Execution, c Choice, fetch Fetch, dir string) 
 
 	b := New(dir, KindRay, c.Name)
 	b.Requires = c.Requires
-	spec := &Spectrum{Spectrum: c.Name, Of: "extrahiert aus " + c.Reference}
+	// "of" nennt den Referenzlauf über seine Endpunkte, nicht über seinen Namen im Vorschlag: der
+	// ("run-2") hängt davon ab, wie Foton-Ids sortieren, und das Spectrum zählt zur Identität des
+	// Pakets. Dieselben Ausführungen, auf welchem Backend auch immer, ergeben dasselbe Paket.
+	spec := &Spectrum{Spectrum: c.Name, Of: "extrahiert aus dem Lauf mit den Endpunkten " +
+		strings.Join(runOf(p, c.Reference).Endpoints, ", ")}
 	for _, ps := range p.Steps {
 		id, ok := ps.Executions[c.Reference]
 		if !ok {
@@ -480,6 +504,20 @@ func shape(e *Execution) string {
 		code = "cmd:" + strings.Join(e.Command, " ")
 	}
 	return code + "|" + strings.Join(ins, ",") + "|" + strings.Join(outs, ",")
+}
+
+// calculation ist, was eine Ausführung gerechnet hat: Gestalt, Befehlszeile, Ein- und Ausgabebytes.
+// Name und Arbeitsort gehören nicht dazu.
+func calculation(e *Execution) string {
+	var files []string
+	for _, f := range e.Inputs {
+		files = append(files, "in:"+f.Slot+"="+f.Hash)
+	}
+	for _, f := range e.Outputs {
+		files = append(files, "out:"+f.Slot+"="+f.Hash)
+	}
+	sort.Strings(files)
+	return shape(e) + "|" + strings.Join(e.Command, "\x00") + "|" + strings.Join(files, ",")
 }
 
 // components teilt die Ausführungen in Läufe: verbunden ist, was einen Hash weitergab.
@@ -635,6 +673,15 @@ func sortedFiles(fs []ExecFile) []ExecFile {
 	out := append([]ExecFile(nil), fs...)
 	sort.Slice(out, func(i, j int) bool { return out[i].Slot < out[j].Slot })
 	return out
+}
+
+func runOf(p *Proposal, id string) Run {
+	for _, r := range p.Runs {
+		if r.ID == id {
+			return r
+		}
+	}
+	return Run{}
 }
 
 func hasRun(p *Proposal, id string) bool {
