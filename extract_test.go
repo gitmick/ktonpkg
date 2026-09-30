@@ -371,3 +371,50 @@ func TestExtract_TheRunLabelDoesNotReachThePackageIdentity(t *testing.T) {
 		t.Fatalf("dasselbe Paket erwartet, bekam %s und %s (of: %q / %q)", id1, id2, b1.Spectrum.Of, b2.Spectrum.Of)
 	}
 }
+
+// Zwei unabhängige Steps stehen im Paket in derselben Reihenfolge, gleich wie ihre Foton-Ids
+// sortieren. Die Ids hängen am Protokoll und unterscheiden sich zwischen Backends; die Reihenfolge
+// geht über Ray.Order in die Identität ein. Ohne kanonische Ordnung ergäben dieselben Berechnungen
+// auf git und improve zwei Pakete — genau das ist im Review aufgefallen.
+func TestExtract_StepOrderDoesNotDependOnFotonIds(t *testing.T) {
+	execs, store := twoRuns(t)
+	extract := func(execs []Execution) string {
+		p, err := Propose(execs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var ref string
+		for _, r := range p.Runs {
+			for _, id := range r.Executions {
+				if strings.HasSuffix(id, "a-aufbereitung") || strings.HasSuffix(id, "1-aufbereitung") {
+					ref = r.ID
+				}
+			}
+		}
+		b, err := Extract(p, execs, Choice{Name: "x", Reference: ref}, fetchFrom(store), t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		id, _ := b.ID()
+		return id
+	}
+	// Einmal sortiert zweig-b vor zweig-c, einmal umgekehrt.
+	rename := func(prefix map[string]string) []Execution {
+		var out []Execution
+		for _, e := range execs {
+			r := e
+			for step, p := range prefix {
+				if strings.HasSuffix(e.ID, "-"+step) {
+					r.ID = "sha256:" + p + strings.TrimPrefix(e.ID, "sha256:")
+				}
+			}
+			out = append(out, r)
+		}
+		return out
+	}
+	a := extract(rename(map[string]string{"zweig-b": "1", "zweig-c": "2"}))
+	b := extract(rename(map[string]string{"zweig-b": "2", "zweig-c": "1"}))
+	if a != b {
+		t.Fatalf("dieselben Berechnungen, anders sortierte Foton-Ids: %s gegen %s", a, b)
+	}
+}

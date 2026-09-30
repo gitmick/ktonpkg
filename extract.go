@@ -287,7 +287,67 @@ func Propose(execs []Execution) (*Proposal, error) {
 			}
 		}
 	}
+	p.Steps = canonicalOrder(p.Steps)
 	return p, nil
+}
+
+// canonicalOrder bringt die Steps in eine Reihenfolge, die nur von ihnen selbst abhängt:
+// topologisch, bei Gleichstand nach Name.
+//
+// Das ist Identität, nicht Ordnungsliebe. Ray.ID rechnet über Ray.Order, und die löst Gleichstände
+// nach der Stellung im Array. Ohne das hier stünden zwei unabhängige Steps so, wie ihre Foton-Ids
+// sortieren — und die unterscheiden sich zwischen Backends, weil das Protokoll mitgerechnet wird.
+// Dieselben Berechnungen ergäben dann zwei Pakete. Ray.Order selbst bleibt, wie es ist: es zu
+// ändern, verschöbe die Identität jedes vorhandenen Pakets.
+func canonicalOrder(steps []ProposedStep) []ProposedStep {
+	byID := map[string]ProposedStep{}
+	deps := map[string]map[string]bool{}
+	for _, s := range steps {
+		byID[s.ID] = s
+		deps[s.ID] = map[string]bool{}
+		for _, in := range s.Inputs {
+			if up, _, ok := strings.Cut(in.Upstream, ":"); ok && up != "" {
+				deps[s.ID][up] = true
+			}
+		}
+	}
+	var names []string
+	for id := range byID {
+		names = append(names, id)
+	}
+	sort.Strings(names)
+	var out []ProposedStep
+	done := map[string]bool{}
+	for len(out) < len(steps) {
+		progressed := false
+		for _, id := range names {
+			if done[id] {
+				continue
+			}
+			ready := true
+			for d := range deps[id] {
+				if !done[d] {
+					ready = false
+					break
+				}
+			}
+			if ready {
+				out = append(out, byID[id])
+				done[id] = true
+				progressed = true
+				break // nach jedem Schritt wieder beim kleinsten Namen beginnen
+			}
+		}
+		if !progressed { // ein Kreis — bei Fotons unmöglich, aber nicht hängen bleiben
+			for _, id := range names {
+				if !done[id] {
+					out = append(out, byID[id])
+					done[id] = true
+				}
+			}
+		}
+	}
+	return out
 }
 
 // Choice ist die Auswahl eines Menschen.
