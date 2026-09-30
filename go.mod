@@ -1,4 +1,4 @@
-module github.com/kton-protocol/ktonpkg
+module github.com/gitmick/ktonpkg
 
 go 1.25.0
 

@@ -1,7 +1,7 @@
 package ktonpkg
 
 import (
-	"github.com/kton-protocol/ktonpkg/ktontest"
+	"github.com/gitmick/ktonpkg/ktontest"
 	"os"
 	"path/filepath"
 	"strings"
