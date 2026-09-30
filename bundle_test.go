@@ -1,7 +1,7 @@
 package ktonpkg
 
 import (
-	"improvego/ktontest"
+	"github.com/kton-protocol/ktonpkg/ktontest"
 	"os"
 	"path/filepath"
 	"strings"
