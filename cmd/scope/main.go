@@ -9,6 +9,8 @@
 //	                                                                       einen Lauf samt Ausgaben aufnehmen
 //	scope install <paket> <revision> <plankton-dir> <nekton-dir> <ansicht> beim User einspielen
 //	scope union <ziel> <wurzel>… [--names <names.json>]                     union/keys/names für kton-web
+//	scope templates <ziel> <name> <revision> --templates <dir> --queries <dir> --key <schlüssel>
+//	                                                                       ein Vokabularpaket bauen (Template-Profil)
 //
 // from-bundle --only-measured lässt Referenzen und Dokumente weg, die mit ihren Läufen nachkommen.
 //
@@ -150,6 +152,20 @@ func main() {
 		check(os.RemoveAll(args[4]))
 		check(os.CopyFS(args[4], os.DirFS(view)))
 		emit(in)
+	case "templates":
+		args, tdir := flag(args, "--templates")
+		args, qdir := flag(args, "--queries")
+		if len(args) != 3 {
+			fail("scope templates <ziel> <name> <revision> --templates <dir> --queries <dir> --key <schlüssel>")
+		}
+		p, r, err := scope.BuildTemplates(args[0], args[1], args[2], tdir, qdir, key(keyPath), scope.Options{})
+		check(err)
+		ts, err := r.Templates()
+		check(err)
+		qs, err := r.Queries()
+		check(err)
+		emit(map[string]any{"package": p.ID, "name": p.Name, "revision": r.ID, "templates": scope.Names(ts),
+			"queries": scope.Names(qs), "problems": p.Verify()})
 	case "union":
 		args, namesPath := flag(args, "--names")
 		if len(args) < 2 {

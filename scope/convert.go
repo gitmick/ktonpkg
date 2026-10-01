@@ -31,6 +31,9 @@ func FromBundle(b *ktonpkg.Bundle, dir, label string, key ed25519.PrivateKey, op
 	if err != nil {
 		return nil, nil, err
 	}
+	if err := r.SetProfile(ProfileWorkflow); err != nil {
+		return nil, nil, err
+	}
 	// Die Bytes fester Eingaben liegen im alten Paket unter ihrem Pfad.
 	byHash := map[string]string{}
 	for _, s := range b.Ray.Steps {

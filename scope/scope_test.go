@@ -249,3 +249,33 @@ func TestRayID_IsThePotentialsIdAndIndependentOfThePackage(t *testing.T) {
 		t.Fatalf("die Ray-Id muss ein Potential der Art %s im Register sein", RayKind)
 	}
 }
+
+// Das Template-Profil: Templates und Abfragen als Teile einer versiegelten Revision, nach Name
+// zurückgelesen, die Bytes gegen ihren Hash geprüft; das Profil steht als Claim, nicht im Seed.
+func TestBuildTemplates_TemplatesAndQueriesOfTheSealedRevision(t *testing.T) {
+	src := t.TempDir()
+	os.MkdirAll(filepath.Join(src, "t"), 0o755)
+	os.MkdirAll(filepath.Join(src, "q"), 0o755)
+	os.WriteFile(filepath.Join(src, "t", "installed.json"), []byte(`{"name":"installed"}`), 0o644)
+	os.WriteFile(filepath.Join(src, "q", "workflows.rq"), []byte("SELECT * WHERE { ?s ?p ?o }"), 0o644)
+	p, _, err := BuildTemplates(filepath.Join(t.TempDir(), "vok"), "vokabular", "1",
+		filepath.Join(src, "t"), filepath.Join(src, "q"), newKey(t), Options{Clock: fixedClock()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if probs := p.Verify(); len(probs) > 0 {
+		t.Fatal(probs)
+	}
+	r, _, err := p.Sealed()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prof, _ := r.Profile(); prof != ProfileTemplates {
+		t.Errorf("Profil %q", prof)
+	}
+	ts, _ := r.Templates()
+	qs, _ := r.Queries()
+	if string(ts["installed"]) != `{"name":"installed"}` || !strings.HasPrefix(string(qs["workflows"]), "SELECT") {
+		t.Errorf("Templates %v, Abfragen %v", Names(ts), Names(qs))
+	}
+}
