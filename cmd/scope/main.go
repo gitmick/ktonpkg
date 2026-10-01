@@ -54,8 +54,7 @@ func main() {
 				cs = append(cs, fmt.Sprintf("%s %s %s %v", short(c.ID), last(c.Predicate), short(c.Subject), c.Object["value"]))
 			}
 			entry := map[string]any{"label": r.Label, "id": r.ID, "claims": cs}
-			if ray, err := r.Ray(); err == nil {
-				id, _ := ray.ID()
+			if id, err := r.RayID(); err == nil {
 				entry["rayId"] = id
 			}
 			rs = append(rs, entry)

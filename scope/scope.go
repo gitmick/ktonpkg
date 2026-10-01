@@ -15,6 +15,16 @@
 // gehört, hängt in ihrer Kette, in Reihenfolge. Ein Siegel trägt den Kopf einer Revision in die
 // Kette des Pakets ein; es darf mehrere geben, auch Zwischensiegel.
 //
+// Der Seed trägt nur den Namen. Alles andere über das Dokument — Art, Zweck, Verantwortliche —
+// steht als Claim in seinem Scope und ist damit geordnet, signiert und änderbar, ohne die
+// Paket-Id zu berühren.
+//
+// Ein Paket ist das nekton der Autorin: was sie gebaut, beschrieben, begründet und versiegelt hat.
+// Was beim User geschieht — Installation, Verifikation, Qualifizierung (IQ/OQ), eigene Reviews —,
+// gehört in das nekton des Users und verweist von dort per Hash auf Paket, Revision und Siegel.
+// Deshalb trägt ein Paket keine verifies- oder qualifies-Claims, und Verify verlangt keine: ein
+// Paket ist ohne das Urteil eines Users vollständig, und kein User erbt das Urteil eines anderen.
+//
 // Was eine Folge von Siegeln bedeutet — freigegeben, in Kraft —, entscheidet hier nichts. Das ist
 // eine Regel über die Claims, geprüft mit SPARQL (das Profil einer Paketart), nicht eine Eigenschaft
 // des Formats. Verify prüft nur Struktur: Unterschriften, Ketten, Hashes, Vollständigkeit.

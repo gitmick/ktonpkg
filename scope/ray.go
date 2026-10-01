@@ -186,6 +186,22 @@ func (r *Revision) AddRay(ray *ktonpkg.Ray, fetch ktonpkg.Fetch, testData map[st
 	return rayID, nil
 }
 
+// RayID ist die Identität des Rays einer Revision: die Id seines zusammengesetzten Potentials im
+// plankton-Register. Sie hängt nur an der Berechnung (Steps, Verdrahtung, Löcher), nicht an Uhr,
+// Schlüssel oder Paket — dieselbe Berechnung in zwei Paketen hat dieselbe Ray-Id.
+func (r *Revision) RayID() (string, error) {
+	claims, err := r.Claims()
+	if err != nil {
+		return "", err
+	}
+	for _, c := range claims {
+		if c.Predicate == PartOf && value(c)["role"] == RoleRay {
+			return c.Subject, nil
+		}
+	}
+	return "", fmt.Errorf("die Revision %s enthält keinen Ray", r.Label)
+}
+
 // Ray liest den Ray einer Revision aus den Records zurück. Feste Eingaben zeigen auf
 // steps/<step>/<slot>, Testdaten auf testdaten/<loch>/<slot> — die Pfade der lesbaren Ansicht.
 func (r *Revision) Ray() (*ktonpkg.Ray, error) {

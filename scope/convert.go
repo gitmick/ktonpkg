@@ -16,6 +16,9 @@ import (
 // als Bytes mit, ohne den Messlauf, der sie erzeugt hat; die Dokumente als Quellen, ohne
 // Renderlauf. Beides steht so in den Claims (Rolle "reference" und "document"), damit ein Profil
 // es vom Ziel unterscheiden kann.
+//
+// verifies-Claims und die übrigen Claims des alten Pakets kommen nicht mit: sie sind Urteile eines
+// Users über die Berechnung und gehören in dessen nekton, nicht in das Paket der Autorin.
 func FromBundle(b *ktonpkg.Bundle, dir, label string, key ed25519.PrivateKey, opt Options) (*Package, *Revision, error) {
 	if b.Ray == nil || b.Package.Kind != ktonpkg.KindRay {
 		return nil, nil, fmt.Errorf("%s ist kein Workflow-Paket", b.Dir)

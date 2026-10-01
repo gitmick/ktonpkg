@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gitmick/ktonpkg"
+	pregistry "kton.dev/plankton/registry"
 )
 
 func fixedClock() func() time.Time {
@@ -209,5 +210,42 @@ func TestVerify_ReportsTamperedBytesAndForeignSignatures(t *testing.T) {
 	}
 	if !strings.Contains(got, "keinem beiliegenden Schlüssel") {
 		t.Errorf("der fremd unterschriebene Claim wird nicht gemeldet:\n%s", got)
+	}
+}
+
+// Die Ray-Id ist die Id des zusammengesetzten Potentials. Sie hängt an der Berechnung, nicht an
+// Uhr, Schlüssel, Paketname oder Revision: zwei Pakete mit demselben Ray haben verschiedene
+// Paket-Ids, aber dieselbe Ray-Id.
+func TestRayID_IsThePotentialsIdAndIndependentOfThePackage(t *testing.T) {
+	b, p1, r1, _ := convert(t)
+	later := func() func() time.Time {
+		t := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
+		return func() time.Time { t = t.Add(time.Minute); return t }
+	}()
+	p2, r2, err := FromBundle(b, filepath.Join(t.TempDir(), "andere"), "v7", newKey(t), Options{Clock: later})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p1.ID == p2.ID {
+		t.Fatalf("verschiedene Pakete sollten verschiedene Paket-Ids haben")
+	}
+	id1, err := r1.RayID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	id2, err := r2.RayID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id1 != id2 {
+		t.Fatalf("Ray-Id %s und %s: dieselbe Berechnung muss dieselbe Ray-Id haben", short(id1), short(id2))
+	}
+	reg, err := pregistry.Open(filepath.Join(p1.Dir, PlanktonDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, ok := reg.Foton(id1)
+	if !ok || f.Protocol.Kind != RayKind {
+		t.Fatalf("die Ray-Id muss ein Potential der Art %s im Register sein", RayKind)
 	}
 }
