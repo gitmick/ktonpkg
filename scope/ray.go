@@ -18,11 +18,15 @@ import (
 // Das Workflow-Profil: ein Ray als Teil einer Revision.
 //
 // Jeder Step ist ein Potential im plankton-Register — dieselbe Identität, die ktonpkg.Ray.Foton
-// rechnet, nur jetzt aufgezeichnet und signiert. Wie die Steps zusammenhängen, kann plankton noch
-// nicht sagen: ein Loch hat keinen Hash, also fehlt der Ausdruck für "die Ausgabe von Step A". Bis
-// FileRef.id das trägt (K4), steht die Verdrahtung in einem zusammengesetzten Potential der Art
-// RayKind, dessen Deskriptor die Steps per Potential-Id und die Kanten nennt. plankton deutet den
-// Deskriptor nicht, hasht ihn aber: die Ray-Id ist die Id dieses Potentials.
+// rechnet, nur jetzt aufgezeichnet und signiert. Wie die Steps zusammenhängen, kann plankton nicht
+// sagen: ein Loch hat keinen Hash, also fehlt der Ausdruck für "die Ausgabe von Step A". Die
+// Verdrahtung steht deshalb in einem zusammengesetzten Potential der Art RayKind, dessen Deskriptor
+// die Steps per Potential-Id und die Kanten nennt. plankton deutet den Deskriptor nicht, hasht ihn
+// aber: die Ray-Id ist die Id dieses Potentials, und die Verdrahtung gehört zu ihr.
+//
+// FileRef.id (K4) ist dafür nicht der Ort: id ist mitgetragen, nicht abgedeckt, und die Verdrahtung
+// muss zur Identität gehören. Ob plankton sie eines Tages selbst ausdrückt, ist eine offene Frage
+// im Workstream (kernel-proposals/K4).
 
 // RayKind ist die Protokollart des zusammengesetzten Potentials.
 const RayKind = "kton.ray"
