@@ -83,6 +83,9 @@ func FromBundle(b *ktonpkg.Bundle, dir, label string, key ed25519.PrivateKey, op
 			return nil, nil, err
 		}
 		refs, _ := b.List(ktonpkg.ReferenceDir)
+		if opt.OnlyMeasured {
+			refs = nil
+		}
 		for _, rel := range refs {
 			body, err := b.ReadFile(rel)
 			if err != nil {
@@ -92,7 +95,7 @@ func FromBundle(b *ktonpkg.Bundle, dir, label string, key ed25519.PrivateKey, op
 			if err != nil {
 				return nil, nil, err
 			}
-			if _, err := r.Claim(h, PartOf, member("reference", map[string]any{"path": rel,
+			if _, err := r.Claim(h, PartOf, member(RoleReference, map[string]any{"path": rel,
 				"note": "aus kton-package/1 übernommen: Bytes ohne Messlauf"})); err != nil {
 				return nil, nil, err
 			}
@@ -106,6 +109,9 @@ func FromBundle(b *ktonpkg.Bundle, dir, label string, key ed25519.PrivateKey, op
 	}
 	for _, d := range []string{"requirements", "specification"} {
 		files, _ := b.List(d)
+		if opt.OnlyMeasured {
+			files = nil
+		}
 		for _, rel := range files {
 			body, err := b.ReadFile(rel)
 			if err != nil {

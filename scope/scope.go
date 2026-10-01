@@ -87,6 +87,9 @@ type Options struct {
 	// Clock liefert die Zeit, die in Seeds und Claims steht. Ohne Angabe: jetzt. Eine feste Uhr
 	// ergibt feste Ids — für Tests und für Pakete, die reproduzierbar entstehen sollen.
 	Clock func() time.Time
+	// OnlyMeasured lässt beim Überführen die Referenzausgaben und Dokumente des alten Pakets weg,
+	// weil sie mit den Läufen nachkommen, die sie erzeugt haben (Revision.AddRun).
+	OnlyMeasured bool
 }
 
 // Create legt ein Paket an: den Seed, der das Dokument nennt.

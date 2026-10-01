@@ -64,7 +64,7 @@ func (r *Revision) WriteView() (string, error) {
 					return "", fmt.Errorf("das Spectrum %s: %w", short(c.Subject), err)
 				}
 				b.Spectrum = &s
-			case RoleDocument, "reference":
+			case RoleDocument, RoleReference:
 				rel = str(v["path"])
 			}
 			if rel == "" {

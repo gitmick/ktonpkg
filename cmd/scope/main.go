@@ -4,6 +4,13 @@
 //	scope inspect <paket>                                                  Paket, Revisionen, Siegel, Prüfbefund
 //	scope view <paket> <revision>                                          lesbare Ansicht nach files/<revision>/
 //	scope seal <paket> <revision> --key <schlüssel>                        den Kopf der Revision versiegeln
+//	scope add-run <paket> <revision> <foton-id> --registry <plankton-dir> --root <dir>
+//	              --pub <schlüssel.pub> --kind reference|render [--step <step>] --key <schlüssel>
+//	                                                                       einen Lauf samt Ausgaben aufnehmen
+//	scope install <paket> <revision> <plankton-dir> <nekton-dir> <ansicht> beim User einspielen
+//	scope union <ziel> <wurzel>… [--names <names.json>]                     union/keys/names für kton-web
+//
+// from-bundle --only-measured lässt Referenzen und Dokumente weg, die mit ihren Läufen nachkommen.
 //
 // Der Schlüssel ist eine Datei mit dem 32-Byte-Seed als Hex, wie `plankton keygen` und
 // `nekton keygen` sie schreiben; fehlt sie, wird sie angelegt.
@@ -16,10 +23,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/gitmick/ktonpkg"
 	"github.com/gitmick/ktonpkg/scope"
+	pregistry "kton.dev/plankton/registry"
 )
 
 func main() {
@@ -27,6 +36,7 @@ func main() {
 		fail("usage: scope from-bundle|inspect|view|seal …")
 	}
 	args, keyPath := flag(os.Args[2:], "--key")
+	args, onlyMeasured := boolFlag(args, "--only-measured")
 	switch os.Args[1] {
 	case "from-bundle":
 		if len(args) != 3 {
@@ -34,7 +44,7 @@ func main() {
 		}
 		b, err := ktonpkg.Open(args[0])
 		check(err)
-		p, r, err := scope.FromBundle(b, args[1], args[2], key(keyPath), scope.Options{})
+		p, r, err := scope.FromBundle(b, args[1], args[2], key(keyPath), scope.Options{OnlyMeasured: onlyMeasured})
 		check(err)
 		dir, err := r.WriteView()
 		check(err)
@@ -85,6 +95,67 @@ func main() {
 		id, err := r.Seal()
 		check(err)
 		emit(map[string]any{"seal": id, "problems": p.Verify()})
+	case "add-run":
+		args, regDir := flag(args, "--registry")
+		args, root := flag(args, "--root")
+		args, pubPath := flag(args, "--pub")
+		args, kind := flag(args, "--kind")
+		args, step := flag(args, "--step")
+		if len(args) != 3 || regDir == "" || root == "" || pubPath == "" || kind == "" {
+			fail("scope add-run <paket> <revision> <foton-id> --registry <dir> --root <dir> --pub <datei> --kind <art> [--step <step>] --key <schlüssel>")
+		}
+		p, err := scope.Open(args[0])
+		check(err)
+		p.WithSigner(key(keyPath), scope.Options{})
+		r, err := p.Revision(args[1])
+		check(err)
+		reg, err := pregistry.Open(regDir)
+		check(err)
+		env, ok := reg.Envelope(args[2])
+		if !ok {
+			fail(args[2] + " liegt nicht in " + regDir)
+		}
+		f, _ := reg.Foton(args[2])
+		outputs := map[string][]byte{}
+		for _, o := range f.Outputs {
+			body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(o.Path)))
+			check(err)
+			outputs[o.Path] = body
+		}
+		raw, err := os.ReadFile(pubPath)
+		check(err)
+		pub, err := hex.DecodeString(strings.TrimSpace(string(raw)))
+		check(err)
+		extra := map[string]any{}
+		if step != "" {
+			extra["step"] = step
+		}
+		id, err := r.AddRun(env, ed25519.PublicKey(pub), kind, extra, outputs)
+		check(err)
+		_, err = r.WriteView()
+		check(err)
+		emit(map[string]any{"run": id, "problems": p.Verify()})
+	case "install":
+		if len(args) != 5 {
+			fail("scope install <paket> <revision> <plankton-dir> <nekton-dir> <ansicht>")
+		}
+		p, err := scope.Open(args[0])
+		check(err)
+		in, err := p.Install(args[1], args[2], args[3])
+		check(err)
+		r, err := p.Revision(args[1])
+		check(err)
+		view, err := r.WriteView()
+		check(err)
+		check(os.RemoveAll(args[4]))
+		check(os.CopyFS(args[4], os.DirFS(view)))
+		emit(in)
+	case "union":
+		args, namesPath := flag(args, "--names")
+		if len(args) < 2 {
+			fail("scope union <ziel> <wurzel>… [--names <names.json>]")
+		}
+		check(writeUnion(args[0], args[1:], namesPath))
 	default:
 		fail("unbekannt: " + os.Args[1])
 	}
@@ -118,6 +189,19 @@ func flag(args []string, name string) ([]string, string) {
 		rest = append(rest, args[i])
 	}
 	return rest, v
+}
+
+func boolFlag(args []string, name string) ([]string, bool) {
+	var rest []string
+	found := false
+	for _, a := range args {
+		if a == name {
+			found = true
+			continue
+		}
+		rest = append(rest, a)
+	}
+	return rest, found
 }
 
 func short(s string) string {

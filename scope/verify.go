@@ -99,6 +99,21 @@ func (p *Package) Verify() []string {
 				if _, err := p.Blob(c.Subject); err != nil {
 					add("Revision %s: %s %s: %v", r.Label, role, short(c.Subject), err)
 				}
+				// Eine Ausgabe, die einen Lauf nennt, muss eine Ausgabe dieses Laufs sein.
+				if run := str(v["run"]); run != "" {
+					f, ok := preg.Foton(run)
+					if !ok {
+						add("Revision %s: %s %s nennt den Lauf %s, der nicht im Paket liegt", r.Label, role, str(v["path"]), short(run))
+						break
+					}
+					found := false
+					for _, o := range f.Outputs {
+						found = found || o.Hash == c.Subject
+					}
+					if !found {
+						add("Revision %s: %s %s ist keine Ausgabe des Laufs %s", r.Label, role, str(v["path"]), short(run))
+					}
+				}
 			}
 		}
 	}
