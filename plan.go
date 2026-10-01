@@ -130,6 +130,10 @@ func (b *Bundle) Plan(work string, bindings Bindings, opt PlanOptions) (*Plan, e
 	return pl, nil
 }
 
+// CommandLine ist die Befehlszeile eines Steps, wie sie im Arbeitsordner läuft; ungebundene
+// Parameter bleiben als <name> stehen. Für die Anzeige und für den Plan dieselbe Form.
+func CommandLine(s *Step, params map[string]string) string { return commandLine(s, params) }
+
 // commandLine macht aus der Befehlszeile eines Steps eine Shell-Zeile. In improve ist die erste
 // Zeile das Image und `<command-file>` setzt der Server; hier läuft der Befehl im Image, das der
 // Ausführende pinnt, und das Skript heißt wie sein Slot. Ein aus Ausführungen extrahiertes Paket
