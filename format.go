@@ -25,7 +25,11 @@
 // mehr nicht.
 package ktonpkg
 
-import "kton.dev/plankton/core"
+import (
+	"strings"
+
+	"kton.dev/plankton/core"
+)
 
 // FormatVersion steht in jedem package.json.
 const FormatVersion = "kton-package/1"
@@ -135,7 +139,14 @@ func (in Input) Pinned() bool { return in.Hash != "" || in.Path != "" }
 const (
 	HoleFile  = "file"
 	HoleParam = "param"
+	// HoleDir ist ein Ordner: sein Slot endet auf "/", gebunden wird er an einen ganzen Ordner, und
+	// jede Datei darin ist eine Eingabe unter dem Slot (slot/datei, slot/unter/datei). Ein Ordner als
+	// Übergabe zwischen Steps (upstream:<step>:<ordner>/) folgt derselben Regel.
+	HoleDir = "dir"
 )
+
+// IsDirSlot sagt, ob ein Slot ein Ordner ist: er endet auf "/".
+func IsDirSlot(slot string) bool { return strings.HasSuffix(slot, "/") }
 
 // Hole ist eine ungebundene Stelle: ein Dateislot oder ein skalarer Parameter.
 type Hole struct {

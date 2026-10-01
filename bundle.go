@@ -285,6 +285,12 @@ func (b *Bundle) Verify() []Problem {
 		case HoleFile, "":
 			if h.Slot == "" {
 				add(h.Step, "", fmt.Sprintf("das Loch %q nennt keinen Slot", h.Name))
+			} else if IsDirSlot(h.Slot) {
+				add(h.Step, h.Slot, fmt.Sprintf("das Loch %q ist eine Datei, sein Slot endet aber auf / (Ordner: type dir)", h.Name))
+			}
+		case HoleDir:
+			if !IsDirSlot(h.Slot) {
+				add(h.Step, h.Slot, fmt.Sprintf("das Ordnerloch %q braucht einen Slot, der auf / endet", h.Name))
 			}
 		default:
 			add(h.Step, "", fmt.Sprintf("unbekannte Lochart %q", h.Type))
@@ -707,7 +713,15 @@ func (b *Bundle) checkTestdaten(add func(step, slot, msg string)) {
 		return
 	}
 	for _, h := range b.Ray.Holes {
-		if !h.Required || h.Type != HoleFile {
+		if !h.Required || (h.Type != HoleFile && h.Type != HoleDir) {
+			continue
+		}
+		if h.Type == HoleDir {
+			if h.Default == "" {
+				add(h.Step, h.Slot, fmt.Sprintf("das Ordnerloch %q hat keine Testdaten", h.Name))
+			} else if files, err := b.List(strings.TrimSuffix(h.Default, "/")); err != nil || len(files) == 0 {
+				add(h.Step, h.Slot, fmt.Sprintf("die Testdaten %q des Ordnerlochs %q liegen nicht im Paket", h.Default, h.Name))
+			}
 			continue
 		}
 		if h.Default == "" {
