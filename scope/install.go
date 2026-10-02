@@ -34,28 +34,10 @@ type Installation struct {
 // Strukturbefund oder eine Revision ohne Siegel wird nicht installiert: ohne Siegel gibt es keinen
 // festen Stand, auf den sich ein Urteil des Users beziehen könnte.
 func (p *Package) Install(label, planktonDir, nektonDir string) (*Installation, error) {
-	if problems := p.Verify(); len(problems) > 0 {
-		return nil, fmt.Errorf("das Paket hat %d Strukturbefund(e), erster: %s", len(problems), problems[0])
-	}
-	r, err := p.Revision(label)
+	in, err := p.Check(label)
 	if err != nil {
 		return nil, err
 	}
-	seals, err := p.Seals()
-	if err != nil {
-		return nil, err
-	}
-	in := &Installation{Package: p.ID, Name: p.Name, Revision: r.ID, Label: r.Label}
-	for _, s := range seals { // in Kettenfolge: das letzte Siegel der Revision gilt
-		if s.Subject == r.ID {
-			in.Seal, in.Head = s.ID, str(s.Object["hash"])
-		}
-	}
-	if in.Seal == "" {
-		return nil, fmt.Errorf("die Revision %s ist nicht versiegelt", label)
-	}
-	in.Ray, _ = r.RayID()
-
 	src, err := pregistry.Open(filepath.Join(p.Dir, PlanktonDir))
 	if err != nil {
 		return nil, err
@@ -84,5 +66,34 @@ func (p *Package) Install(label, planktonDir, nektonDir string) (*Installation, 
 		}
 		in.Claims++
 	}
+	return in, nil
+}
+
+// Check prüft das Paket wie Install und nennt den versiegelten Stand einer Revision, ohne etwas zu
+// kopieren. Wer seine Register nur mit Eigenem füllt und das Paket über Föderation mitliest, nimmt
+// das: die Records des Pakets bleiben an einer Stelle, im Paket.
+func (p *Package) Check(label string) (*Installation, error) {
+	if problems := p.Verify(); len(problems) > 0 {
+		return nil, fmt.Errorf("das Paket hat %d Strukturbefund(e), erster: %s", len(problems), problems[0])
+	}
+	r, err := p.Revision(label)
+	if err != nil {
+		return nil, err
+	}
+	seals, err := p.Seals()
+	if err != nil {
+		return nil, err
+	}
+	in := &Installation{Package: p.ID, Name: p.Name, Revision: r.ID, Label: r.Label}
+	for _, s := range seals { // in Kettenfolge: das letzte Siegel der Revision gilt
+		if s.Subject == r.ID {
+			in.Seal, in.Head = s.ID, str(s.Object["hash"])
+		}
+	}
+	if in.Seal == "" {
+		return nil, fmt.Errorf("die Revision %s ist nicht versiegelt", label)
+	}
+	in.Ray, _ = r.RayID()
+
 	return in, nil
 }
