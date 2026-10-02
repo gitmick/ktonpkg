@@ -40,6 +40,13 @@ const (
 	RoleSpectrum = "spectrum"
 	RoleRun      = "run" // ein aufgezeichneter Lauf (Messung, Test, Rendern) — Unterart im Objekt
 	RoleDocument = "document"
+	RoleInstance = "instance" // wie das Werkzeug in improve eingerichtet wird (improve/tool-instance.json)
+	RoleBuild    = "build"    // woraus das Image gebaut ist (flake.nix, flake.lock)
+
+	// InstanceEntry ist die Einrichtung eines Werkzeugs im Paket.
+	InstanceEntry = "improve/tool-instance.json"
+	// Image ist der Claim über eine Werkzeug-Revision: das gepinnte Image (repo@sha256:…).
+	Image = "https://kton.dev/v/image"
 )
 
 type rayDescriptor struct {

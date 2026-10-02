@@ -2,8 +2,10 @@ package scope
 
 import (
 	"crypto/ed25519"
+	"encoding/json"
 	"fmt"
 	"path"
+	"strings"
 
 	"github.com/gitmick/ktonpkg"
 )
@@ -20,8 +22,12 @@ import (
 // verifies-Claims und die übrigen Claims des alten Pakets kommen nicht mit: sie sind Urteile eines
 // Users über die Berechnung und gehören in dessen nekton, nicht in das Paket der Autorin.
 func FromBundle(b *ktonpkg.Bundle, dir, label string, key ed25519.PrivateKey, opt Options) (*Package, *Revision, error) {
-	if b.Ray == nil || b.Package.Kind != ktonpkg.KindRay {
-		return nil, nil, fmt.Errorf("%s ist kein Workflow-Paket", b.Dir)
+	if b.Ray == nil || (b.Package.Kind != ktonpkg.KindRay && b.Package.Kind != ktonpkg.KindTool) {
+		return nil, nil, fmt.Errorf("%s ist weder ein Workflow- noch ein Werkzeugpaket", b.Dir)
+	}
+	profile := ProfileWorkflow
+	if b.Package.Kind == ktonpkg.KindTool {
+		profile = ProfileTool
 	}
 	p, err := Create(dir, b.Package.Name, key, opt)
 	if err != nil {
@@ -31,7 +37,7 @@ func FromBundle(b *ktonpkg.Bundle, dir, label string, key ed25519.PrivateKey, op
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := r.SetProfile(ProfileWorkflow); err != nil {
+	if err := r.SetProfile(profile); err != nil {
 		return nil, nil, err
 	}
 	// Die Bytes fester Eingaben liegen im alten Paket unter ihrem Pfad.
@@ -110,6 +116,11 @@ func FromBundle(b *ktonpkg.Bundle, dir, label string, key ed25519.PrivateKey, op
 			return nil, nil, err
 		}
 	}
+	if b.Package.Kind == ktonpkg.KindTool {
+		if err := toolParts(b, p, r); err != nil {
+			return nil, nil, err
+		}
+	}
 	for _, d := range []string{"requirements", "specification"} {
 		files, _ := b.List(d)
 		if opt.OnlyMeasured {
@@ -131,4 +142,44 @@ func FromBundle(b *ktonpkg.Bundle, dir, label string, key ed25519.PrivateKey, op
 		}
 	}
 	return p, r, nil
+}
+
+// toolParts nimmt auf, was ein Werkzeug über die Berechnungen hinaus ausmacht: wie es in improve
+// eingerichtet wird (die Instanz, Rolle "instance"), woraus sein Image gebaut ist (flake.nix und
+// flake.lock, Rolle "build") und welches Image es ist (Claim image, der gepinnte Digest). Über diese
+// Teile führt die Installation zum improve-Werkzeug; über das Spectrum die Qualifizierung.
+func toolParts(b *ktonpkg.Bundle, p *Package, r *Revision) error {
+	if raw, err := b.ReadFile(InstanceEntry); err == nil {
+		h, err := p.PutBlob(raw)
+		if err != nil {
+			return err
+		}
+		if _, err := r.Claim(h, PartOf, member(RoleInstance, map[string]any{"name": InstanceEntry})); err != nil {
+			return err
+		}
+		var inst struct {
+			Value string `json:"value"`
+		}
+		if json.Unmarshal(raw, &inst) == nil {
+			if img := strings.SplitN(inst.Value, "\n", 2)[0]; strings.Contains(img, "@sha256:") {
+				if _, err := r.Claim(r.ID, Image, map[string]any{"value": img}); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	for _, f := range []string{"flake.nix", "flake.lock"} {
+		raw, err := b.ReadFile(f)
+		if err != nil {
+			continue
+		}
+		h, err := p.PutBlob(raw)
+		if err != nil {
+			return err
+		}
+		if _, err := r.Claim(h, PartOf, member(RoleBuild, map[string]any{"name": f})); err != nil {
+			return err
+		}
+	}
+	return nil
 }

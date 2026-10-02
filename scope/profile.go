@@ -12,6 +12,7 @@ const (
 	ConformsTo = "http://purl.org/dc/terms/conformsTo"
 
 	ProfileWorkflow  = "https://kton.dev/profile/workflow"
+	ProfileTool      = "https://kton.dev/profile/tool"
 	ProfileTemplates = "https://kton.dev/profile/templates"
 )
 
