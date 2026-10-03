@@ -142,23 +142,38 @@ func (p *Package) Verify() []string {
 	return out
 }
 
+// keys sind die beiliegenden öffentlichen Schlüssel: keys/ des Pakets und, wo ein Register daneben
+// steht, dessen registry/keys/ — dort legt ein Register die Schlüssel der Claims ab, die andere in es
+// geschrieben haben (Unterschriften von Personen, aufgezeichnete Läufe). Vertrauen heißt das nicht;
+// es heißt nur, dass jede Unterschrift ohne Netz nachrechenbar ist.
 func (p *Package) keys() ([]ed25519.PublicKey, error) {
-	entries, err := os.ReadDir(filepath.Join(p.Dir, KeyDir))
+	out, err := keysIn(filepath.Join(p.Dir, KeyDir))
 	if err != nil {
 		return nil, fmt.Errorf("%s fehlt", KeyDir)
+	}
+	if more, err := keysIn(filepath.Join(p.Dir, "registry", "keys")); err == nil {
+		out = append(out, more...)
+	}
+	return out, nil
+}
+
+func keysIn(dir string) ([]ed25519.PublicKey, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
 	}
 	var out []ed25519.PublicKey
 	for _, e := range entries {
 		if !strings.HasSuffix(e.Name(), ".pub") {
 			continue
 		}
-		b, err := os.ReadFile(filepath.Join(p.Dir, KeyDir, e.Name()))
+		b, err := os.ReadFile(filepath.Join(dir, e.Name()))
 		if err != nil {
 			return nil, err
 		}
 		raw, err := hex.DecodeString(strings.TrimSpace(string(b)))
 		if err != nil || len(raw) != ed25519.PublicKeySize {
-			return nil, fmt.Errorf("%s ist kein öffentlicher Schlüssel", e.Name())
+			return nil, fmt.Errorf("%s ist kein Hex-Schlüssel", e.Name())
 		}
 		out = append(out, ed25519.PublicKey(raw))
 	}
