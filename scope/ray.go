@@ -47,6 +47,10 @@ const (
 	InstanceEntry = "improve/tool-instance.json"
 	// Image ist der Claim über eine Werkzeug-Revision: das gepinnte Image (repo@sha256:…).
 	Image = "https://kton.dev/v/image"
+	// Invocation ist der Claim über eine Werkzeug-Revision: wie der Container aufgerufen wird
+	// (die Optionen vor dem Image, etwa Mount und Entrypoint) und über welchen Grid-Provider. Was
+	// am Ort hängt — Toolart, Docker-Host —, sagt erst der Standort beim Installieren.
+	Invocation = "https://kton.dev/v/invocation"
 )
 
 type rayDescriptor struct {
@@ -312,6 +316,8 @@ func (r *Revision) Ray() (*ktonpkg.Ray, error) {
 		if c, ok := testData[h.Name]; ok {
 			if h.Type == ktonpkg.HoleFile {
 				hole.Default = path.Join("testdaten", h.Name, h.Slot)
+			} else if h.Type == ktonpkg.HoleDir {
+				hole.Default = path.Join("testdaten", h.Name, strings.TrimSuffix(h.Slot, "/")) + "/"
 			} else if body, err := r.P.Blob(c.Subject); err == nil {
 				hole.Default = string(body)
 			}
@@ -393,4 +399,26 @@ func (p *Package) addSpec(spec foton.Spec) (string, error) {
 		return "", fmt.Errorf("das Register vergibt %s für %s", got, id)
 	}
 	return id, nil
+}
+
+// AddTestDataDir legt die Testdaten eines Ordnerlochs in die Revision: jede Datei ein Teil der Rolle
+// test-data, ihr Ort im Ordner als Slot (<slot>/<name>). In der lesbaren Ansicht stehen sie unter
+// testdaten/<loch>/<slot>/, und dorthin zeigt die Vorgabe des Lochs.
+func (r *Revision) AddTestDataDir(rayID, hole, slot string, files map[string][]byte) error {
+	names := make([]string, 0, len(files))
+	for n := range files {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		h, err := r.P.PutBlob(files[n])
+		if err != nil {
+			return err
+		}
+		extra := map[string]any{"hole": hole, "ray": rayID, "slot": path.Join(strings.TrimSuffix(slot, "/"), n)}
+		if _, err := r.Claim(h, PartOf, member(RoleTestData, extra)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
