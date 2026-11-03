@@ -103,6 +103,11 @@ type Step struct {
 type Protocol struct {
 	Command *Command `json:"command,omitempty"`
 	Tool    string   `json:"tool,omitempty"`
+	// Image is where the step runs, pinned by digest (oci://<repo>@sha256:<hex>). It belongs to the
+	// computation and so to the identity; a step without it keeps the identity it had before the
+	// field existed. With Image set, the command line is taken as written. Without it, the older
+	// improve form still holds: an image as the first args line, the rest run as Rscript.
+	Image string `json:"image,omitempty"`
 }
 
 // Command ist die Befehlszeile.

@@ -109,7 +109,14 @@ func (r *Revision) AddRay(ray *ktonpkg.Ray, fetch ktonpkg.Fetch, testData map[st
 			return "", fmt.Errorf("Step %s: %w", id, err)
 		}
 		desc.Steps = append(desc.Steps, rayStep{ID: id, Potential: pid})
-		if _, err := r.Claim(pid, PartOf, member(RoleStep, map[string]any{"step": id})); err != nil {
+		stepExtra := map[string]any{"step": id}
+		if s.Parent != "" {
+			stepExtra["parent"] = s.Parent
+		}
+		if len(s.Verifies) > 0 {
+			stepExtra["verifies"] = append([]string(nil), s.Verifies...)
+		}
+		if _, err := r.Claim(pid, PartOf, member(RoleStep, stepExtra)); err != nil {
 			return "", err
 		}
 		if s.Label != "" {
@@ -173,7 +180,25 @@ func (r *Revision) AddRay(ray *ktonpkg.Ray, fetch ktonpkg.Fetch, testData map[st
 	if err != nil {
 		return "", fmt.Errorf("der Ray: %w", err)
 	}
-	if _, err := r.Claim(rayID, PartOf, member(RoleRay, map[string]any{"name": ray.Name})); err != nil {
+	rayExtra := map[string]any{"name": ray.Name}
+	// What a hole is for and who fills it is not identity (Ray.ID leaves it out); it travels here.
+	notes := map[string]any{}
+	for _, h := range ray.Holes {
+		n := map[string]any{}
+		if h.Description != "" {
+			n["description"] = h.Description
+		}
+		if h.FilledBy != "" {
+			n["filledBy"] = h.FilledBy
+		}
+		if len(n) > 0 {
+			notes[h.Name] = n
+		}
+	}
+	if len(notes) > 0 {
+		rayExtra["holes"] = notes
+	}
+	if _, err := r.Claim(rayID, PartOf, member(RoleRay, rayExtra)); err != nil {
 		return "", err
 	}
 	names := make([]string, 0, len(testData))
@@ -225,6 +250,8 @@ func (r *Revision) Ray() (*ktonpkg.Ray, error) {
 		return nil, err
 	}
 	var rayID, name string
+	var holeNotes map[string]any
+	stepNotes := map[string]map[string]any{}
 	labels, rationales := map[string]string{}, map[string]string{}
 	testData := map[string]ClaimInfo{}
 	for _, c := range claims {
@@ -234,6 +261,9 @@ func (r *Revision) Ray() (*ktonpkg.Ray, error) {
 			switch v["role"] {
 			case RoleRay:
 				rayID, name = c.Subject, str(v["name"])
+				holeNotes, _ = v["holes"].(map[string]any)
+			case RoleStep:
+				stepNotes[str(v["step"])] = v
 			case RoleTestData:
 				testData[str(v["hole"])] = c
 			}
@@ -272,6 +302,18 @@ func (r *Revision) Ray() (*ktonpkg.Ray, error) {
 		cmd, _ := f.Protocol.Descriptor["command"].(map[string]any)
 		if args, ok := cmd["args"].(string); ok {
 			s.Protocol.Command = &ktonpkg.Command{Args: args}
+		} else if cmd == nil {
+			// Without a command the tool names the computation (ktonpkg identity: descriptor).
+			s.Protocol.Tool = str(f.Protocol.Descriptor["tool"])
+		}
+		s.Protocol.Image = str(f.Protocol.Descriptor["image"])
+		if n := stepNotes[st.ID]; n != nil {
+			s.Parent = str(n["parent"])
+			if vs, ok := n["verifies"].([]any); ok {
+				for _, v := range vs {
+					s.Verifies = append(s.Verifies, str(v))
+				}
+			}
 		}
 		vars := map[string]string{}
 		if vs, ok := f.Protocol.Descriptor["variables"].([]any); ok {
@@ -313,6 +355,9 @@ func (r *Revision) Ray() (*ktonpkg.Ray, error) {
 	}
 	for _, h := range desc.Holes {
 		hole := ktonpkg.Hole{Name: h.Name, Step: h.Step, Slot: h.Slot, Param: h.Param, Type: h.Type, Required: h.Required}
+		if n, ok := holeNotes[h.Name].(map[string]any); ok {
+			hole.Description, hole.FilledBy = str(n["description"]), str(n["filledBy"])
+		}
 		if c, ok := testData[h.Name]; ok {
 			if h.Type == ktonpkg.HoleFile {
 				hole.Default = path.Join("testdaten", h.Name, h.Slot)

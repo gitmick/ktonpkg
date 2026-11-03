@@ -1,7 +1,9 @@
 package ktonpkg
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"path"
 	"sort"
 	"strings"
@@ -16,13 +18,16 @@ type Plan struct {
 
 // PlanStep ist ein Step des Plans.
 type PlanStep struct {
-	ID      string            `json:"id"`
-	Dir     string            `json:"dir"`
-	Stage   []Stage           `json:"stage"`
-	Params  map[string]string `json:"params,omitempty"`
-	Cmd     string            `json:"cmd"`
-	Inputs  []string          `json:"inputs"`
-	Outputs []string          `json:"outputs"`
+	ID     string            `json:"id"`
+	Dir    string            `json:"dir"`
+	Stage  []Stage           `json:"stage"`
+	Params map[string]string `json:"params,omitempty"`
+	Cmd    string            `json:"cmd"`
+	// Image is where the step must run: Protocol.Image, or the improve args line. An executor that
+	// would run it elsewhere must refuse rather than record a run of another computation.
+	Image   string   `json:"image,omitempty"`
+	Inputs  []string `json:"inputs"`
+	Outputs []string `json:"outputs"`
 }
 
 // Stage ist eine Kopie vor dem Lauf. Die Bytes landen unter ihrem Slotnamen im Stepordner, weil
@@ -119,8 +124,17 @@ func (b *Bundle) Plan(work string, bindings Bindings, opt PlanOptions) (*Plan, e
 		}
 		p.Params = params
 		p.Cmd = "cd " + dir + " && " + commandLine(s, params)
-		for _, o := range outputs[id] {
-			p.Outputs = append(p.Outputs, path.Join(dir, o))
+		p.Image = stepImage(s, params)
+		if s.Protocol.Image != "" && !strings.Contains(s.Protocol.Image, "@sha256:") {
+			return nil, fmt.Errorf("%s: the image %q is not pinned by digest (@sha256:)", id, s.Protocol.Image)
+		}
+		// What the step says it writes, else what the reference run shows it wrote.
+		outs := s.Outputs
+		if len(outs) == 0 {
+			outs = outputs[id]
+		}
+		for _, o := range outs {
+			p.Outputs = append(p.Outputs, path.Join(dir, strings.TrimPrefix(o, "./")))
 		}
 		if len(p.Outputs) == 0 {
 			return nil, fmt.Errorf("%s: das Paket sagt nicht, was dieser Step erzeugt", id)
@@ -140,7 +154,7 @@ func CommandLine(s *Step, params map[string]string) string { return commandLine(
 // trägt die Befehlszeile so, wie sie lief — ohne Image-Zeile und mit dem Interpreter vorne.
 func commandLine(s *Step, params map[string]string) string {
 	lines := strings.Split(ResolvedArgs(s, params), "\n")
-	improve := len(lines) > 0 && strings.Contains(lines[0], "@sha256:")
+	improve := s.Protocol.Image == "" && len(lines) > 0 && strings.Contains(lines[0], "@sha256:")
 	if improve {
 		lines = lines[1:]
 	}
@@ -155,10 +169,25 @@ func commandLine(s *Step, params map[string]string) string {
 	return strings.Join(lines, " ")
 }
 
+// stepImage is the image a step names: Protocol.Image, or the first args line in the improve form.
+func stepImage(s *Step, params map[string]string) string {
+	if s.Protocol.Image != "" {
+		return s.Protocol.Image
+	}
+	first, _, _ := strings.Cut(ResolvedArgs(s, params), "\n")
+	if strings.Contains(first, "@sha256:") {
+		return first
+	}
+	return ""
+}
+
 // declaredOutputs liest, was jeder Step erzeugt, aus den Referenzausgaben des Pakets:
 // reference/<step>-<datei>.
 func (b *Bundle) declaredOutputs() (map[string][]string, error) {
 	names, err := b.List(ReferenceDir)
+	if errors.Is(err, fs.ErrNotExist) {
+		names, err = nil, nil // no reference run: the steps' own Outputs have to say it
+	}
 	if err != nil {
 		return nil, err
 	}

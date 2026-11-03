@@ -85,6 +85,9 @@ func descriptor(s *Step, hashBySlot, params map[string]string) map[string]any {
 	} else if s.Protocol.Tool != "" {
 		d["tool"] = s.Protocol.Tool
 	}
+	if s.Protocol.Image != "" {
+		d["image"] = s.Protocol.Image
+	}
 
 	var vars []any
 	for _, in := range s.Inputs {

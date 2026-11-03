@@ -279,3 +279,52 @@ func TestBuildTemplates_TemplatesAndQueriesOfTheSealedRevision(t *testing.T) {
 		t.Errorf("Templates %v, Abfragen %v", Names(ts), Names(qs))
 	}
 }
+
+// Everything the ray carries comes back: a step without a command is identified by its tool, and
+// what is not identity (verifies, parent, a hole's description and origin) travels as claims.
+func TestRay_RoundTripKeepsToolTraceAndHoleNotes(t *testing.T) {
+	b := miniBundle(t)
+	urs, _ := b.AddFile("requirements/URS-2.md", []byte("---\nkey: URS-2\n---\n\nReport the count.\n"))
+	b.Ray.Steps = append(b.Ray.Steps, ktonpkg.Step{
+		ID: "report", Parent: "count", Verifies: []string{urs},
+		Protocol: ktonpkg.Protocol{Tool: "improve.report"},
+		Inputs:   []ktonpkg.Input{{Slot: "out.txt", From: "upstream:count:out.txt"}},
+		Outputs:  []string{"report.txt"}})
+	b.Ray.Holes[0].Description = "the data set"
+	b.Ray.Holes[0].FilledBy = "the operator"
+	if err := b.Write(); err != nil {
+		t.Fatal(err)
+	}
+	if p := b.Verify(); len(p) > 0 {
+		t.Fatalf("the old package itself is not sound: %v", p)
+	}
+	p, _, err := FromBundle(b, filepath.Join(t.TempDir(), "mini"), "rev-1", newKey(t), Options{Clock: fixedClock()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := p.Revision("rev-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	back, err := r.Ray()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := b.Ray.ID()
+	if got, err := back.ID(); err != nil || got != want {
+		t.Fatalf("ray id %s, want %s (%v)", got, want, err)
+	}
+	s := back.Step("report")
+	if s == nil || s.Protocol.Tool != "improve.report" || s.Protocol.Command != nil {
+		t.Fatalf("the tool must come back as the step's protocol: %+v", s)
+	}
+	if w, _ := b.Ray.FotonID("report", nil, nil); func() string { g, _ := back.FotonID("report", nil, nil); return g }() != w {
+		t.Errorf("report: potential differs from the original")
+	}
+	if s.Parent != "count" || len(s.Verifies) != 1 || s.Verifies[0] != urs {
+		t.Errorf("parent and verifies must travel: parent %q, verifies %v", s.Parent, s.Verifies)
+	}
+	if h := back.Hole("data"); h == nil || h.Description != "the data set" || h.FilledBy != "the operator" {
+		t.Errorf("the hole's description and origin must travel: %+v", h)
+	}
+}
