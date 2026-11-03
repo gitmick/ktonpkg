@@ -44,16 +44,18 @@ type Viewer struct {
 	Intents map[string]string `json:"intents,omitempty"` // viewer intent → control in this package
 }
 
-// Control is a say of one of the package's templates. Signer, scope and about say how the host
-// picks them from the caller's input; the key is always the caller's own.
+// Control is a say of one of the package's templates; about says how the host picks the subject
+// from the caller's input. Who signs, and in which scope, is not the package's to say, nor the
+// caller's: the host signs with its session's own key and scope (MH 03.11.).
 type Control struct {
-	Title  string          `json:"title,omitempty"`
-	Say    Say             `json:"say"`
-	Signer json.RawMessage `json:"signer,omitempty"`
-	Scope  json.RawMessage `json:"scope,omitempty"`
-	About  json.RawMessage `json:"about,omitempty"`
-	Input  json.RawMessage `json:"input,omitempty"` // JSON Schema, an object at the top
+	Title string          `json:"title,omitempty"`
+	Say   Say             `json:"say"`
+	About json.RawMessage `json:"about,omitempty"`
+	Input json.RawMessage `json:"input,omitempty"` // JSON Schema, an object at the top
 }
+
+// sessionOnly are the fields a control may not declare: the signer and scope are the session's.
+var sessionOnly = []string{"signer", "scope"}
 
 // Say names the template a control says, or the templates it may choose from.
 type Say struct {
@@ -82,6 +84,14 @@ func (r *Revision) AddViewer(name string, body []byte) (string, error) {
 }
 
 func (r *Revision) AddControl(name string, body []byte) (string, error) {
+	var raw map[string]json.RawMessage
+	if json.Unmarshal(body, &raw) == nil {
+		for _, f := range sessionOnly {
+			if _, has := raw[f]; has {
+				return "", fmt.Errorf("control %q: %q is not declared: the host signs with its session's own key and scope", name, f)
+			}
+		}
+	}
 	if _, err := decode[Control](body); err != nil {
 		return "", fmt.Errorf("control %q: %w", name, err)
 	}
@@ -96,8 +106,33 @@ func (r *Revision) AddMCPTool(name string, body []byte) (string, error) {
 }
 
 // Viewers, Controls and MCPTools are the revision's declarations by name.
-func (r *Revision) Viewers() (map[string]Viewer, error)   { return decodeAll[Viewer](r, RoleViewer) }
-func (r *Revision) Controls() (map[string]Control, error) { return decodeAll[Control](r, RoleControl) }
+func (r *Revision) Viewers() (map[string]Viewer, error) { return decodeAll[Viewer](r, RoleViewer) }
+
+// Controls reads the revision's controls. A revision sealed before 03.11. may still name a signer or
+// scope; those are history, never honoured by a host, and are left out here rather than making the
+// revision unreadable.
+func (r *Revision) Controls() (map[string]Control, error) {
+	raw, err := r.named(RoleControl)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]Control{}
+	for name, body := range raw {
+		var m map[string]json.RawMessage
+		if err := json.Unmarshal(body, &m); err == nil {
+			for _, f := range sessionOnly {
+				delete(m, f)
+			}
+			body, _ = json.Marshal(m)
+		}
+		c, err := decode[Control](body)
+		if err != nil {
+			return nil, fmt.Errorf("control %q: %w", name, err)
+		}
+		out[name] = c
+	}
+	return out, nil
+}
 func (r *Revision) MCPTools() (map[string]MCPTool, error) { return decodeAll[MCPTool](r, RoleMCP) }
 
 func decode[T any](body []byte) (T, error) {

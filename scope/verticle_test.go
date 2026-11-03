@@ -30,7 +30,7 @@ func verticleSrc(t *testing.T, edit map[string]string) string {
 				{"name":"template","step":"render","slot":"template.docx","type":"file","required":true,"default":"testdata/template.docx"},
 				{"name":"format","step":"render","param":"format","type":"param","required":true,"default":"docx"}]}`,
 		"controls/note.json": `{"title":"Say a document was rendered","say":{"template":"rendered","templates":["rendered"]},
-			"signer":{"from":"input","field":"lane"},"input":{"type":"object","required":["document"],
+			"input":{"type":"object","required":["document"],
 			"properties":{"document":{"type":"string"}}}}`,
 		"mcp/render.json": `{"description":"Render a source with a template","ray":"render",
 			"bind":{"source":"source","template":"template","format":"format"},
@@ -138,6 +138,12 @@ func TestBuildVerticle_RefusesBrokenReferences(t *testing.T) {
 		"unknown field (a typo)": {map[string]string{
 			"controls/note.json": `{"say":{"template":"rendered"},"inputs":{"type":"object"}}`}, "inputs"},
 		"mcp bound to a ray the package lacks": {map[string]string{"ray.json": ""}, `"render"`},
+		"control choosing its signer": {map[string]string{
+			"controls/note.json": `{"say":{"template":"rendered"},"signer":{"from":"input","field":"lane"},"input":{"type":"object"}}`},
+			"session's own key"},
+		"control choosing its scope": {map[string]string{
+			"controls/note.json": `{"say":{"template":"rendered"},"scope":{"from":"input","field":"lane"},"input":{"type":"object"}}`},
+			"session's own key"},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -183,5 +189,33 @@ func TestBuildVerticle_IntoAnExistingPackageAddsARevision(t *testing.T) {
 	}
 	if _, _, err := BuildVerticle(dir, "other", "v3", src2, key, Options{}); err == nil || !strings.Contains(err.Error(), "render") {
 		t.Fatalf("building another name into the package must be refused, got %v", err)
+	}
+}
+
+// A revision sealed before signers became the session's (03.11.) may still name one. It stays
+// readable and verifies; the reader leaves the signer out, since no host honours it.
+func TestControls_AnOldSignerIsHistoryNotAnError(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "render")
+	key := newKey(t)
+	p, _, err := BuildVerticle(dir, "render", "v1", verticleSrc(t, nil), key, Options{Clock: fixedClock()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := p.NewRevision("v2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := `{"say":{"template":"rendered"},"signer":{"from":"input","field":"lane"},"scope":{"from":"input","field":"lane"},"input":{"type":"object"}}`
+	if _, err := r.addNamed(RoleControl, "old", []byte(old)); err != nil {
+		t.Fatal(err)
+	}
+	cs, err := r.Controls()
+	if err != nil || cs["old"].Say.Template != "rendered" {
+		t.Fatalf("controls: %+v (%v)", cs, err)
+	}
+	for _, prob := range p.Verify() {
+		if strings.Contains(prob, "signer") || strings.Contains(prob, "scope") {
+			t.Fatalf("an old signer must not be a problem: %s", prob)
+		}
 	}
 }
