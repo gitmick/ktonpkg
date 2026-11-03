@@ -11,6 +11,8 @@
 //	scope union <ziel> <wurzel>… [--names <names.json>]                     union/keys/names für kton-web
 //	scope templates <ziel> <name> <revision> --templates <dir> --queries <dir> --key <schlüssel>
 //	                                                                       ein Vokabularpaket bauen (Template-Profil)
+//	scope verticle <ziel> <name> <revision> --src <dir> --key <schlüssel>
+//	                                                                       ein Verticle bauen (Profil verticle)
 //
 // from-bundle --only-measured lässt Referenzen und Dokumente weg, die mit ihren Läufen nachkommen.
 //
@@ -26,6 +28,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/gitmick/ktonpkg"
@@ -166,6 +169,30 @@ func main() {
 		check(err)
 		emit(map[string]any{"package": p.ID, "name": p.Name, "revision": r.ID, "templates": scope.Names(ts),
 			"queries": scope.Names(qs), "problems": p.Verify()})
+	case "verticle":
+		args, src := flag(args, "--src")
+		if len(args) != 3 || src == "" {
+			fail("scope verticle <ziel> <name> <revision> --src <dir> --key <schlüssel>")
+		}
+		p, r, err := scope.BuildVerticle(args[0], args[1], args[2], src, key(keyPath), scope.Options{})
+		check(err)
+		out := map[string]any{"package": p.ID, "name": p.Name, "revision": r.ID, "problems": p.Verify()}
+		for k, f := range map[string]func() (map[string][]byte, error){"templates": r.Templates, "queries": r.Queries} {
+			m, err := f()
+			check(err)
+			out[k] = scope.Names(m)
+		}
+		vs, err := r.Viewers()
+		check(err)
+		cs, err := r.Controls()
+		check(err)
+		ms, err := r.MCPTools()
+		check(err)
+		out["viewers"], out["controls"], out["mcp"] = keys(vs), keys(cs), keys(ms)
+		if id, err := r.RayID(); err == nil {
+			out["ray"] = id
+		}
+		emit(out)
 	case "union":
 		args, namesPath := flag(args, "--names")
 		if len(args) < 2 {
@@ -250,4 +277,13 @@ func check(err error) {
 func fail(msg string) {
 	fmt.Fprintln(os.Stderr, msg)
 	os.Exit(1)
+}
+
+func keys[T any](m map[string]T) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }

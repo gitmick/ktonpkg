@@ -117,6 +117,14 @@ func (p *Package) Verify() []string {
 			}
 		}
 	}
+	// A verticle's declarations must name parts of the same package.
+	for _, r := range revs {
+		if prof, _ := r.Profile(); prof == ProfileVerticle {
+			for _, msg := range r.VerticleProblems() {
+				add("Revision %s: %s", r.Label, msg)
+			}
+		}
+	}
 	seals, err := p.Seals()
 	if err != nil {
 		return append(out, err.Error())
