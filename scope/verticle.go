@@ -273,9 +273,10 @@ func sortedKeys[T any](m map[string]T) []string {
 //	<src>/controls/<name>.json    Control
 //	<src>/mcp/<name>.json         MCPTool
 //
-// It refuses to seal a revision whose declarations do not hold together (VerticleProblems).
+// Into an existing package of the same name it adds the revision (the label must be new). It refuses
+// to seal a revision whose declarations do not hold together (VerticleProblems).
 func BuildVerticle(dir, name, label, src string, key ed25519.PrivateKey, opt Options) (*Package, *Revision, error) {
-	p, err := Create(dir, name, key, opt)
+	p, err := createOrOpen(dir, name, label, key, opt)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -331,6 +332,26 @@ func BuildVerticle(dir, name, label, src string, key ed25519.PrivateKey, opt Opt
 		return nil, nil, err
 	}
 	return p, r, nil
+}
+
+// createOrOpen creates the package, or opens it when dir already holds it: a verticle evolves by
+// revisions of one package, so the id an operator allowed (claims.allowedPackages) stays, and the
+// latest sealed revision is what a host takes.
+func createOrOpen(dir, name, label string, key ed25519.PrivateKey, opt Options) (*Package, error) {
+	if _, err := os.Stat(filepath.Join(dir, NektonDir)); err != nil {
+		return Create(dir, name, key, opt)
+	}
+	p, err := Open(dir)
+	if err != nil {
+		return nil, err
+	}
+	if p.Name != name {
+		return nil, fmt.Errorf("%s is the package %q, not %q", dir, p.Name, name)
+	}
+	if _, err := p.Revision(label); err == nil {
+		return nil, fmt.Errorf("the package %s already has a revision %s", name, label)
+	}
+	return p.WithSigner(key, opt), nil
 }
 
 // addRayFrom reads a ktonpkg.Ray whose pinned inputs and test data are files under src.

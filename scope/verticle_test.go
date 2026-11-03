@@ -149,3 +149,39 @@ func TestBuildVerticle_RefusesBrokenReferences(t *testing.T) {
 		})
 	}
 }
+
+// A verticle evolves by revisions of one package: building into an existing package adds a sealed
+// revision, so the package id an operator allowed stays the same and the latest seal is what counts.
+func TestBuildVerticle_IntoAnExistingPackageAddsARevision(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "render")
+	key := newKey(t)
+	p1, _, err := BuildVerticle(dir, "render", "v1", verticleSrc(t, nil), key, Options{Clock: fixedClock()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	src2 := verticleSrc(t, map[string]string{"queries/latest.rq": "SELECT ?run WHERE { ?run ?p ?o }\n"})
+	p2, r2, err := BuildVerticle(dir, "render", "v2", src2, key, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p2.ID != p1.ID {
+		t.Fatalf("a second revision must keep the package id: %s, was %s", p2.ID, p1.ID)
+	}
+	if probs := p2.Verify(); len(probs) > 0 {
+		t.Fatalf("Verify: %v", probs)
+	}
+	revs, _ := p2.Revisions()
+	sealed, _, _ := p2.Sealed()
+	if len(revs) != 2 || sealed.ID != r2.ID {
+		t.Fatalf("want 2 revisions with v2 sealed last, got %d (sealed %s)", len(revs), sealed.Label)
+	}
+	if qs, _ := sealed.Queries(); len(qs) != 2 {
+		t.Fatalf("v2 must hold its own parts: %v", Names(qs))
+	}
+	if _, _, err := BuildVerticle(dir, "render", "v2", src2, key, Options{}); err == nil || !strings.Contains(err.Error(), "v2") {
+		t.Fatalf("a label already used must be refused, got %v", err)
+	}
+	if _, _, err := BuildVerticle(dir, "other", "v3", src2, key, Options{}); err == nil || !strings.Contains(err.Error(), "render") {
+		t.Fatalf("building another name into the package must be refused, got %v", err)
+	}
+}
