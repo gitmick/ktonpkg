@@ -138,6 +138,8 @@ func TestBuildVerticle_RefusesBrokenReferences(t *testing.T) {
 		"unknown field (a typo)": {map[string]string{
 			"controls/note.json": `{"say":{"template":"rendered"},"inputs":{"type":"object"}}`}, "inputs"},
 		"mcp bound to a ray the package lacks": {map[string]string{"ray.json": ""}, `"render"`},
+		"mcp bind to a variable only a comment mentions": {map[string]string{
+			"queries/renders.rq": "# $SOURCE is the source\nSELECT ?run WHERE { ?run ?p ?o }\n"}, "$SOURCE"},
 		"control choosing its signer": {map[string]string{
 			"controls/note.json": `{"say":{"template":"rendered"},"signer":{"from":"input","field":"lane"},"input":{"type":"object"}}`},
 			"session's own key"},
@@ -216,6 +218,38 @@ func TestControls_AnOldSignerIsHistoryNotAnError(t *testing.T) {
 	for _, prob := range p.Verify() {
 		if strings.Contains(prob, "signer") || strings.Contains(prob, "scope") {
 			t.Fatalf("an old signer must not be a problem: %s", prob)
+		}
+	}
+}
+
+// A folder hole can bring test data: each file of the folder, the hole's default pointing at them.
+func TestBuildVerticle_FolderHoleTestData(t *testing.T) {
+	ray := `{"name":"render","steps":[{"id":"render","protocol":{"command":{"args":"img@sha256:00\n<command-file>"}},
+		"inputs":[{"slot":"render.sh","path":"steps/render/render.sh","variable":"command-file"},
+			{"slot":"source.md","from":"hole:source"},{"slot":"resources/","from":"hole:resources"}],"outputs":["out"]}],
+		"holes":[{"name":"source","step":"render","slot":"source.md","type":"file","required":true,"default":"testdata/source.md"},
+			{"name":"resources","step":"render","slot":"resources/","type":"dir","default":"testdata/resources/"}]}`
+	edit := map[string]string{"ray.json": ray, "testdata/resources/logo.txt": "logo", "testdata/resources/img/a.txt": "a",
+		"mcp/render.json": `{"ray":"render","bind":{"source":"source","resources":"resources"},"input":{"type":"object"}}`}
+	dir := filepath.Join(t.TempDir(), "render")
+	p, r, err := BuildVerticle(dir, "render", "v1", verticleSrc(t, edit), newKey(t), Options{Clock: fixedClock()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if probs := p.Verify(); len(probs) > 0 {
+		t.Fatalf("Verify: %v", probs)
+	}
+	got, err := r.Ray()
+	if err != nil || got.Hole("resources").Default != "testdaten/resources/resources/" {
+		t.Fatalf("hole %+v (%v)", got.Hole("resources"), err)
+	}
+	view, err := r.WriteView()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"logo.txt", "img/a.txt"} {
+		if _, err := os.Stat(filepath.Join(view, "testdaten", "resources", "resources", filepath.FromSlash(f))); err != nil {
+			t.Errorf("view: %v", err)
 		}
 	}
 }

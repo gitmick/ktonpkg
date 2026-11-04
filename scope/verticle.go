@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -253,7 +254,7 @@ func (r *Revision) VerticleProblems() []string {
 				break
 			}
 			for _, v := range sortedKeys(m.Bind) {
-				if !regexp.MustCompile(`\$` + regexp.QuoteMeta(v) + `\b`).Match(q) {
+				if !regexp.MustCompile(`\$` + regexp.QuoteMeta(v) + `\b`).Match(withoutComments(q)) {
 					add("mcp tool %q binds $%s, which the query %q does not use", n, v, m.Query)
 				}
 			}
@@ -418,11 +419,18 @@ func addRayFrom(r *Revision, src string, body []byte) error {
 		}
 	}
 	testData := map[string][]byte{}
+	testDirs := map[string]map[string][]byte{}
 	for _, h := range ray.Holes {
 		if h.Default == "" {
 			continue
 		}
 		switch h.Type {
+		case ktonpkg.HoleDir:
+			files, err := readTree(filepath.Join(src, filepath.FromSlash(h.Default)))
+			if err != nil {
+				return fmt.Errorf("test data of %s: %w", h.Name, err)
+			}
+			testDirs[h.Name] = files
 		case ktonpkg.HoleFile:
 			b, err := read(h.Default)
 			if err != nil {
@@ -441,6 +449,52 @@ func addRayFrom(r *Revision, src string, body []byte) error {
 		}
 		return nil, fmt.Errorf("no bytes for %s", hash)
 	}
-	_, err = r.AddRay(&ray, fetch, testData)
-	return err
+	id, err := r.AddRay(&ray, fetch, testData)
+	if err != nil {
+		return err
+	}
+	for _, h := range ray.Holes {
+		if files, ok := testDirs[h.Name]; ok {
+			if err := r.AddTestDataDir(id, h.Name, h.Slot, files); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// readTree reads a folder's files by their slash path inside it. An empty folder is refused: as test
+// data it would bind the hole to nothing.
+func readTree(root string) (map[string][]byte, error) {
+	files := map[string][]byte{}
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(root, p)
+		if err != nil {
+			return err
+		}
+		b, err := os.ReadFile(p)
+		files[filepath.ToSlash(rel)] = b
+		return err
+	})
+	if err == nil && len(files) == 0 {
+		err = fmt.Errorf("%s holds no files", root)
+	}
+	return files, err
+}
+
+// withoutComments is a query as the host reads its parameters: whole-line comments and trailing " #"
+// comments gone (an IRI's # has no space before it). A $VAR only a comment mentions is no parameter.
+func withoutComments(q []byte) []byte {
+	lines := strings.Split(string(q), "\n")
+	for i, l := range lines {
+		if strings.HasPrefix(strings.TrimSpace(l), "#") {
+			lines[i] = ""
+		} else if j := strings.Index(l, " #"); j >= 0 {
+			lines[i] = l[:j]
+		}
+	}
+	return []byte(strings.Join(lines, "\n"))
 }

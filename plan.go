@@ -102,7 +102,8 @@ func (b *Bundle) Plan(work string, bindings Bindings, opt PlanOptions) (*Plan, e
 			case strings.HasPrefix(in.From, FromHole):
 				name := strings.TrimPrefix(in.From, FromHole)
 				v := bindings[name]
-				if h := b.Ray.Hole(name); h != nil && v == h.Default {
+				// Ein offenes Loch (optional, keine Vorgabe, nicht gebunden) bleibt leer: From ist dann "".
+				if h := b.Ray.Hole(name); h != nil && v != "" && v == h.Default {
 					v = path.Join(b.Dir, v) // der Testdatensatz liegt im Paket
 				}
 				from = v

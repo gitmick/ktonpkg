@@ -99,3 +99,20 @@ func TestIdentity_TheImageIsPartOfTheStep(t *testing.T) {
 		t.Fatal("a step without an image must not get an image key (old ids would change)")
 	}
 }
+
+// An optional hole with no default and no binding is open: nothing to stage from, not the package.
+func TestPlan_AnOpenHoleHasAnEmptyFrom(t *testing.T) {
+	b := renderBundle(t, Protocol{Command: &Command{Args: "<command-file>\n<format>"}}, []string{"document.docx"})
+	s := b.Ray.Step("render")
+	s.Inputs = append(s.Inputs, Input{Slot: "resources/", From: "hole:resources"})
+	b.Ray.Holes = append(b.Ray.Holes, Hole{Name: "resources", Step: "render", Slot: "resources/", Type: HoleDir})
+	pl, err := b.Plan("work", nil, PlanOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, st := range pl.Steps[0].Stage {
+		if strings.HasPrefix(st.To, path.Join("work", "render", "resources")) && st.From != "" {
+			t.Fatalf("an open hole must have an empty From, got %q", st.From)
+		}
+	}
+}
