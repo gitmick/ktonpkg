@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="ASCII"?>
+<nm:output xmlns:nm="http://namespaces.oreilly.com/xml/nonmem">
+<nm:start_datetime>2026-11-11T18:10:30.000</nm:start_datetime>
+<nm:license_information><![CDATA[
+License Registered to: Other
+Expiration Date:    31 DEC 2027
+]]></nm:license_information>
+<nm:final_objective_function>133.202254503871</nm:final_objective_function>
+<nm:estimation_elapsed_time>0.57</nm:estimation_elapsed_time>
+<nm:covariance_elapsed_time>0.20</nm:covariance_elapsed_time>
+<nm:total_cputime>0.801</nm:total_cputime>
+<nm:stop_datetime>2026-11-11T18:10:33.000</nm:stop_datetime>
+</nm:output>
