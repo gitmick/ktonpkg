@@ -3,7 +3,7 @@
 # one model (<runs-dir>/run-a, run-b with one .lst .xml .cpu each; <runs-dir>/model.ctl, data.csv).
 # 1. every output of both runs through the normaliser, in its pinned image (as anyone re-executes it)
 # 2. run-a and run-b must normalise to the same bytes, or nothing is built
-# 3. the kton-package/1 bundle (build/main.go), then the sealed scope package (scope from-bundle)
+# 3. the kton-package/1 bundle (build/main.go), the scope package (scope from-bundle), then the seal
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"; ROOT="$HERE/../.."
 RUNS=$(cd "$1" && pwd); OUT=$2; KEY=$3; LABEL=${4:-v1}
@@ -25,3 +25,5 @@ done
 cp "$RUNS"/run-a/*.lst "$W/ref/raw/run1.lst"; cp "$RUNS/model.ctl" "$RUNS/data.csv" "$W/ref/"
 ( cd "$ROOT" && go run ./spectra/nonmem/build "$W/bundle" "$W/ref" )
 ( cd "$ROOT" && go run ./cmd/scope from-bundle "$W/bundle" "$OUT" "$LABEL" --key "$KEY" ) | grep -E '"(package|revision|problems)"'
+# Only a sealed revision can be installed (cockpit install); from-bundle does not seal.
+( cd "$ROOT" && go run ./cmd/scope seal "$OUT" "$LABEL" --key "$KEY" ) | grep -E '"(problems|seal)"'
