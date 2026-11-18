@@ -328,3 +328,28 @@ func TestRay_RoundTripKeepsToolTraceAndHoleNotes(t *testing.T) {
 		t.Errorf("the hole's description and origin must travel: %+v", h)
 	}
 }
+
+// Converting into an existing package of the same name adds a revision instead of refusing, as
+// BuildVerticle and BuildTool do: a changed normaliser is a new revision of the same package.
+func TestFromBundle_AnExistingPackageGetsANewRevision(t *testing.T) {
+	b := miniBundle(t)
+	dir := filepath.Join(t.TempDir(), "mini")
+	key := newKey(t)
+	p1, _, err := FromBundle(b, dir, "v1", key, Options{Clock: fixedClock()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p2, r2, err := FromBundle(b, dir, "v2", key, Options{Clock: fixedClock()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p2.ID != p1.ID || r2.Label != "v2" {
+		t.Fatalf("package %s rev %s, want package %s rev v2", p2.ID, r2.Label, p1.ID)
+	}
+	if probs := p2.Verify(); len(probs) > 0 {
+		t.Fatal(probs)
+	}
+	if _, _, err := FromBundle(b, dir, "v2", key, Options{Clock: fixedClock()}); err == nil {
+		t.Fatal("a second v2 must be refused")
+	}
+}

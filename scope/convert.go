@@ -32,7 +32,7 @@ func FromBundle(b *ktonpkg.Bundle, dir, label string, key ed25519.PrivateKey, op
 	if b.Package.Kind == ktonpkg.KindTool {
 		profile = ProfileTool
 	}
-	p, err := Create(dir, b.Package.Name, key, opt)
+	p, err := createOrOpen(dir, b.Package.Name, label, key, opt)
 	if err != nil {
 		return nil, nil, err
 	}

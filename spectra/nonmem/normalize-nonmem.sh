@@ -20,6 +20,7 @@ elif ! grep -qvE '^[[:space:]]*[-+0-9.Ee]*[[:space:]]*$' "$in"; then
 else
   sed -E \
     -e 's/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [ 0-9][0-9] [0-9:]{8} [A-Z]+ [0-9]{4} *$/<date>/' \
+    -e 's/^(Current Date:).*/\1 <date>/' \
     -e 's/^(License Registered to:).*/\1 <license>/' \
     -e 's/^(Expiration Date:).*/\1 <license>/' \
     -e 's/^(Days until program expires *:).*/\1 <license>/' \

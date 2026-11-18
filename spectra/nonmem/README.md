@@ -3,7 +3,7 @@
 One normaliser and one reference model. Not a spectrum framework.
 
 - `normalize-nonmem.sh <in> <out>`: takes out of one NONMEM output what changes from run to run and
-  nothing else. `.lst`: the date lines, the license lines, `Elapsed … time in seconds`, `#CPUT`.
+  nothing else. `.lst`: the date lines (also `Current Date:`), the license lines, `Elapsed … time in seconds`, `#CPUT`.
   `.xml`: `nm:start_datetime`, `nm:stop_datetime`, `nm:*elapsed_time`, `nm:total_cputime`, the
   license information. `.cpu`: emptied. The type comes from the content, so every application is the
   same potential. Numbers, the NONMEM version and the model stay.
