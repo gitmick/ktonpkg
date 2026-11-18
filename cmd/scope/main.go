@@ -168,8 +168,10 @@ func main() {
 		check(err)
 		qs, err := r.Queries()
 		check(err)
+		a, err := r.Aliases()
+		check(err)
 		emit(map[string]any{"package": p.ID, "name": p.Name, "revision": r.ID, "templates": scope.Names(ts),
-			"queries": scope.Names(qs), "problems": p.Verify()})
+			"queries": scope.Names(qs), "aliases": a != nil, "problems": p.Verify()})
 	case "verticle":
 		args, src := flag(args, "--src")
 		if len(args) != 3 || src == "" {
@@ -177,7 +179,9 @@ func main() {
 		}
 		p, r, err := scope.BuildVerticle(args[0], args[1], args[2], src, key(keyPath), scope.Options{})
 		check(err)
-		out := map[string]any{"package": p.ID, "name": p.Name, "revision": r.ID, "problems": p.Verify()}
+		a, err := r.Aliases()
+		check(err)
+		out := map[string]any{"package": p.ID, "name": p.Name, "revision": r.ID, "aliases": a != nil, "problems": p.Verify()}
 		for k, f := range map[string]func() (map[string][]byte, error){"templates": r.Templates, "queries": r.Queries} {
 			m, err := f()
 			check(err)

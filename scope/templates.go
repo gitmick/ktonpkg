@@ -43,7 +43,7 @@ func BuildTemplates(dir, name, label, templateDir, queryDir string, key ed25519.
 		}
 		return len(files), nil
 	}
-	nt, err := add(templateDir, ".json", r.AddTemplate)
+	nt, err := add(templateDir, ".json", r.addTemplateOrAliases)
 	if err != nil {
 		return nil, nil, err
 	}

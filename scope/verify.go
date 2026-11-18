@@ -58,6 +58,7 @@ func (p *Package) Verify() []string {
 		return append(out, err.Error())
 	}
 	inRev := map[string]map[string]bool{} // Revision → Claim-Ids ihrer Kette
+	aliases := map[string]int{}           // revision → number of alias files
 	for _, r := range revs {
 		if _, _, ok := nreg.Heads(r.ID); !ok {
 			add("die Revision %s hat keine lesbare Kette", r.Label)
@@ -96,8 +97,16 @@ func (p *Package) Verify() []string {
 					}
 				}
 			default:
-				if _, err := p.Blob(c.Subject); err != nil {
+				body, err := p.Blob(c.Subject)
+				if err != nil {
 					add("Revision %s: %s %s: %v", r.Label, role, short(c.Subject), err)
+				} else if role == RoleAliases {
+					if err := ParseAliases(body); err != nil {
+						add("Revision %s: %v", r.Label, err)
+					}
+					if aliases[r.ID]++; aliases[r.ID] == 2 {
+						add("Revision %s has more than one alias file", r.Label)
+					}
 				}
 				// Eine Ausgabe, die einen Lauf nennt, muss eine Ausgabe dieses Laufs sein.
 				if run := str(v["run"]); run != "" {

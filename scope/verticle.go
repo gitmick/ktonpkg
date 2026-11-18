@@ -328,7 +328,7 @@ func BuildVerticle(dir, name, label, src string, key ed25519.PrivateKey, opt Opt
 		dir, ext string
 		put      func(string, []byte) (string, error)
 	}{
-		{"templates", ".json", r.AddTemplate},
+		{"templates", ".json", r.addTemplateOrAliases},
 		{"queries", ".rq", r.AddQuery},
 		{"controls", ".json", r.AddControl},
 		{"viewers", ".json", r.AddViewer},
