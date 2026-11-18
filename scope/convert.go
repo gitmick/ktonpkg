@@ -21,6 +21,9 @@ import (
 //
 // verifies-Claims und die übrigen Claims des alten Pakets kommen nicht mit: sie sind Urteile eines
 // Users über die Berechnung und gehören in dessen nekton, nicht in das Paket der Autorin.
+//
+// Deprecated for tool packages: use BuildTool, whose references are measured runs and whose
+// steps run in an image pinned by digest. FromBundle stays for old kton-package/1 bundles.
 func FromBundle(b *ktonpkg.Bundle, dir, label string, key ed25519.PrivateKey, opt Options) (*Package, *Revision, error) {
 	if b.Ray == nil || (b.Package.Kind != ktonpkg.KindRay && b.Package.Kind != ktonpkg.KindTool) {
 		return nil, nil, fmt.Errorf("%s ist weder ein Workflow- noch ein Werkzeugpaket", b.Dir)

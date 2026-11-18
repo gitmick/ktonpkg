@@ -34,11 +34,12 @@ import (
 	"github.com/gitmick/ktonpkg"
 	"github.com/gitmick/ktonpkg/scope"
 	pregistry "kton.dev/plankton/registry"
+	"kton.dev/plankton/spectrum"
 )
 
 func main() {
 	if len(os.Args) < 3 {
-		fail("usage: scope from-bundle|inspect|view|seal …")
+		fail("usage: scope from-bundle|inspect|view|seal|add-run|install|templates|verticle|tool|coverage|spectrum-check|union …")
 	}
 	args, keyPath := flag(os.Args[2:], "--key")
 	args, onlyMeasured := boolFlag(args, "--only-measured")
@@ -193,6 +194,54 @@ func main() {
 			out["ray"] = id
 		}
 		emit(out)
+	case "tool":
+		args, src := flag(args, "--src")
+		args, regDir := flag(args, "--registry")
+		args, root := flag(args, "--root")
+		args, pub := flag(args, "--pub")
+		args, runs := multiFlag(args, "--run")
+		if len(args) != 2 || src == "" || regDir == "" || root == "" || pub == "" || len(runs) == 0 {
+			fail("scope tool <out> <label> --src <dir> --registry <dir> --root <dir> --pub <file> --run <member>=<foton-id>... --key <key>")
+		}
+		p, r, err := scope.BuildTool(args[0], args[1], src,
+			scope.ReferenceRuns{Registry: regDir, Root: root, Pub: pub, ByMember: pairs(runs)}, key(keyPath), scope.Options{})
+		check(err)
+		spec, err := r.Spectrum()
+		check(err)
+		sid, err := spec.ID()
+		check(err)
+		emit(map[string]any{"package": p.ID, "name": p.Name, "revision": r.ID, "spectrum": sid,
+			"normalizer": spec.Normalizer, "members": len(spec.Members), "problems": p.Verify()})
+	case "coverage":
+		args, resultPath := flag(args, "--result")
+		if len(args) < 1 || len(args) > 2 {
+			fail("scope coverage <package> [<revision>] [--result <spectrum-check.json>]")
+		}
+		r := revisionArg(args)
+		var res *spectrum.Result
+		if resultPath != "" {
+			raw, err := os.ReadFile(resultPath)
+			check(err)
+			res = &spectrum.Result{}
+			check(json.Unmarshal(raw, res))
+		}
+		cov, err := r.Coverage(res)
+		check(err)
+		emit(cov)
+	case "spectrum-check":
+		args, regDir := flag(args, "--registry")
+		args, cands := multiFlag(args, "--candidate")
+		if len(args) < 1 || len(args) > 2 || regDir == "" {
+			fail("scope spectrum-check <package> [<revision>] --registry <dir> --candidate <member>=<hash>...")
+		}
+		r := revisionArg(args)
+		// The candidates' registry and the package's own, read together: the reference runs travel in
+		// the package, and the caller's registry is not written to.
+		reg, err := pregistry.OpenUnion(regDir, filepath.Join(r.P.Dir, scope.PlanktonDir))
+		check(err)
+		res, err := r.SpectrumCheck(reg, pairs(cands))
+		check(err)
+		emit(map[string]any{"outcome": res.Outcome(), "result": res})
 	case "union":
 		args, namesPath := flag(args, "--names")
 		if len(args) < 2 {
@@ -286,4 +335,45 @@ func keys[T any](m map[string]T) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// multiFlag takes every occurrence of name and its value.
+func multiFlag(args []string, name string) ([]string, []string) {
+	var rest, vals []string
+	for i := 0; i < len(args); i++ {
+		if args[i] == name && i+1 < len(args) {
+			vals = append(vals, args[i+1])
+			i++
+			continue
+		}
+		rest = append(rest, args[i])
+	}
+	return rest, vals
+}
+
+// pairs reads k=v arguments.
+func pairs(kvs []string) map[string]string {
+	out := map[string]string{}
+	for _, kv := range kvs {
+		k, v, ok := strings.Cut(kv, "=")
+		if !ok {
+			fail("want <name>=<value>, not " + kv)
+		}
+		out[k] = v
+	}
+	return out
+}
+
+// revisionArg opens <package> and its revision by label, or the latest sealed one.
+func revisionArg(args []string) *scope.Revision {
+	p, err := scope.Open(args[0])
+	check(err)
+	if len(args) == 2 {
+		r, err := p.Revision(args[1])
+		check(err)
+		return r
+	}
+	r, _, err := p.Sealed()
+	check(err)
+	return r
 }
