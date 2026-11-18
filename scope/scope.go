@@ -3,12 +3,16 @@
 // Ein Paket hat kein eigenes Format mehr. Es ist ein Ausschnitt aus einem Register: plankton-Records
 // (Potentiale, Läufe), nekton-Claims über sie, und die Bytes dahinter.
 //
-//	<paket>/
-//	  registry/nekton/    der Seed des Pakets, je Revision ein Sub-Seed, die Ketten, die Siegel
-//	  registry/plankton/  Potentiale und Läufe
-//	  blobs/sha256/<hex>  die Bytes, nach Inhalt
-//	  keys/<keyid>.pub    die öffentlichen Schlüssel der Unterzeichner — ein Hinweis, kein Vertrauen
-//	  files/<revision>/   eine lesbare Ansicht, aus dem Rest abgeleitet; sie entscheidet nichts
+// The layout since v0.8.0 (kton-cockpit ADR-016) uses a repository's names under .kton/:
+//
+//	<package>/
+//	  nekton/             the package seed, one sub-seed per revision, the chains, the seals
+//	  plankton/           potentials and runs
+//	  blobs/<hh>/<hex>    the bytes, by content (plankton's blobstore)
+//	  keys/<keyid>.pub    the signers' public keys — a hint, not trust
+//	  files/<revision>/   a readable view derived from the rest; it decides nothing
+//
+// A package in the layout before v0.8.0 moves with Migrate (scope migrate); its ids stay the same.
 //
 // Der Seed des Pakets nennt das Dokument und bleibt über alle Revisionen gleich; seine Id ist die
 // Paket-Id. Jede Revision ist ein Sub-Seed mit dem Paket als parent. Alles, was zu einer Revision
