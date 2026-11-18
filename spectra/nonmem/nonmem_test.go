@@ -13,7 +13,7 @@ import (
 // The ref is what cockpit-improve-backend records and what the spectrum names. It changes only when
 // the script, its arguments or the image change; then every L1 recorded under the old ref stays
 // with the old normaliser, which is the point. Update it deliberately, never to make a test pass.
-const wantRef = "sha256:730332aed79e73c2a50d1a9ebeded777de342e1fa58e7ce88d45de44a3568a4e"
+const wantRef = "sha256:38c3d9c95a4e7c73b19c94e1e8201d47b3e225f48df303a6ea40450035c3b1fe"
 
 func TestRef_IsPinned(t *testing.T) {
 	ref, err := Ref()
@@ -81,6 +81,34 @@ func TestScript_TwoRunsAgreeAChangedNumberDoesNot(t *testing.T) {
 		if norm(changed) == norm(a) {
 			t.Errorf(".%s: a changed objective function value must not normalise away", ext)
 		}
+	}
+}
+
+// A run reproduced on another day differs in the listing's "Current Date:" line only (cockpit-runtime,
+// iter-mh1 gof_run1; MH 18.11.). That line is blanked like the other dates.
+func TestScript_CurrentDateLineIsBlanked(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	dir := t.TempDir()
+	script := filepath.Join(dir, "normalize-nonmem.sh")
+	if err := os.WriteFile(script, Script, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	norm := func(in string) string {
+		out := filepath.Join(dir, "out")
+		if b, err := exec.Command("sh", script, in, out).CombinedOutput(); err != nil {
+			t.Fatalf("%s: %v %s", in, err, b)
+		}
+		b, _ := os.ReadFile(out)
+		return string(b)
+	}
+	a, b := filepath.Join("testdata", "date-a.lst"), filepath.Join("testdata", "date-b.lst")
+	if read(t, a) == read(t, b) {
+		t.Fatal("the fixtures must differ before normalising")
+	}
+	if na, nb := norm(a), norm(b); na != nb || na != "Current Date: <date>\n" {
+		t.Fatalf("normalised %q and %q, want both %q", na, nb, "Current Date: <date>\n")
 	}
 }
 
