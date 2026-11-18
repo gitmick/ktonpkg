@@ -46,15 +46,18 @@ import (
 
 	nclaim "kton.dev/nekton/claim"
 	nregistry "kton.dev/nekton/registry"
+	"kton.dev/plankton/blobstore"
 	"kton.dev/plankton/core"
 	pregistry "kton.dev/plankton/registry"
 )
 
-// Die Orte im Paket.
+// The places in a package. Since v0.8.0 (ADR-016) they are the names a repository uses under
+// .kton/, so a package and a repository read alike: plankton/, nekton/, keys/ (public keys only,
+// by key id), blobs/ (plankton's blobstore shape, <hh>/<hex>).
 const (
-	NektonDir   = "registry/nekton"
-	PlanktonDir = "registry/plankton"
-	BlobDir     = "blobs/sha256"
+	NektonDir   = "nekton"
+	PlanktonDir = "plankton"
+	BlobDir     = "blobs"
 	KeyDir      = "keys"
 	FilesDir    = "files"
 )
@@ -242,24 +245,31 @@ type ClaimInfo struct {
 
 // --- Bytes -----------------------------------------------------------------------------------------
 
-// PutBlob legt Bytes nach ihrem Inhalt ab und gibt den Hash zurück.
+// PutBlob stores bytes by their content with plankton's blobstore and returns the hash.
 func (p *Package) PutBlob(body []byte) (string, error) {
-	h := core.HashBytes(body)
-	path := p.blobPath(h)
-	if _, err := os.Stat(path); err == nil {
-		return h, nil
-	}
-	if err := os.WriteFile(path, body, 0o644); err != nil {
+	s, err := blobstore.Open(filepath.Join(p.Dir, BlobDir))
+	if err != nil {
 		return "", err
 	}
-	return h, nil
+	h := core.HashBytes(body)
+	if s.Has(h) {
+		return h, nil
+	}
+	return s.Put(body)
 }
 
-// Blob liest Bytes nach Hash und prüft sie.
+// Blob reads bytes by hash; the blobstore checks them against it.
 func (p *Package) Blob(hash string) ([]byte, error) {
+	s, err := blobstore.Open(filepath.Join(p.Dir, BlobDir))
+	if err != nil {
+		return nil, err
+	}
+	if !s.Has(hash) {
+		return nil, fmt.Errorf("%s liegt nicht im Paket", hash)
+	}
 	body, err := os.ReadFile(p.blobPath(hash))
 	if err != nil {
-		return nil, fmt.Errorf("%s liegt nicht im Paket", hash)
+		return nil, err
 	}
 	if got := core.HashBytes(body); got != hash {
 		return nil, fmt.Errorf("die Bytes zu %s haben den Hash %s", hash, got)
@@ -267,8 +277,10 @@ func (p *Package) Blob(hash string) ([]byte, error) {
 	return body, nil
 }
 
+// blobPath is where the blobstore keeps hash (tests use it to damage a blob).
 func (p *Package) blobPath(hash string) string {
-	return filepath.Join(p.Dir, BlobDir, strings.TrimPrefix(hash, "sha256:"))
+	hx := strings.TrimPrefix(hash, "sha256:")
+	return filepath.Join(p.Dir, BlobDir, hx[:2], hx)
 }
 
 // --- Kernel ----------------------------------------------------------------------------------------

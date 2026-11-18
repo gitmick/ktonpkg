@@ -39,7 +39,7 @@ import (
 
 func main() {
 	if len(os.Args) < 3 {
-		fail("usage: scope from-bundle|inspect|view|seal|add-run|install|templates|verticle|tool|coverage|spectrum-check|union …")
+		fail("usage: scope from-bundle|inspect|view|seal|add-run|install|migrate|templates|verticle|tool|coverage|spectrum-check|union …")
 	}
 	args, keyPath := flag(os.Args[2:], "--key")
 	args, onlyMeasured := boolFlag(args, "--only-measured")
@@ -156,6 +156,15 @@ func main() {
 		check(os.RemoveAll(args[4]))
 		check(os.CopyFS(args[4], os.DirFS(view)))
 		emit(in)
+	case "migrate":
+		if len(args) != 1 {
+			fail("scope migrate <package>")
+		}
+		moved, err := scope.Migrate(args[0])
+		check(err)
+		p, err := scope.Open(args[0])
+		check(err)
+		emit(map[string]any{"package": p.ID, "name": p.Name, "moved": moved, "problems": p.Verify()})
 	case "templates":
 		args, tdir := flag(args, "--templates")
 		args, qdir := flag(args, "--queries")

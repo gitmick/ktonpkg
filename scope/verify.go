@@ -159,42 +159,40 @@ func (p *Package) Verify() []string {
 	return out
 }
 
-// keys sind die beiliegenden öffentlichen Schlüssel: keys/ des Pakets und, wo ein Register daneben
-// steht, dessen registry/keys/ — dort legt ein Register die Schlüssel der Claims ab, die andere in es
-// geschrieben haben (Unterschriften von Personen, aufgezeichnete Läufe). Vertrauen heißt das nicht;
-// es heißt nur, dass jede Unterschrift ohne Netz nachrechenbar ist.
+// keys are the public keys the package carries in keys/ (its own and those of recorded runs). They
+// are not trust; they only make every signature checkable without a network.
 func (p *Package) keys() ([]ed25519.PublicKey, error) {
-	out, err := keysIn(filepath.Join(p.Dir, KeyDir))
+	out, err := KeysIn(filepath.Join(p.Dir, KeyDir))
 	if err != nil {
 		return nil, fmt.Errorf("%s fehlt", KeyDir)
-	}
-	if more, err := keysIn(filepath.Join(p.Dir, "registry", "keys")); err == nil {
-		out = append(out, more...)
 	}
 	return out, nil
 }
 
-func keysIn(dir string) ([]ed25519.PublicKey, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
+// KeysIn reads every public key (*.pub, hex) under dir, at any depth: a package keeps them flat by
+// key id, a repository by tier folder (keys/<tier>/<name>.pub, ADR-016). keys/ holds public keys
+// only; a file that is not a hex public key is an error, not something to skip.
+func KeysIn(dir string) ([]ed25519.PublicKey, error) {
+	if _, err := os.Stat(dir); err != nil {
 		return nil, err
 	}
 	var out []ed25519.PublicKey
-	for _, e := range entries {
-		if !strings.HasSuffix(e.Name(), ".pub") {
-			continue
+	err := filepath.WalkDir(dir, func(path string, e os.DirEntry, err error) error {
+		if err != nil || e.IsDir() || !strings.HasSuffix(e.Name(), ".pub") {
+			return err
 		}
-		b, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		b, err := os.ReadFile(path)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		raw, err := hex.DecodeString(strings.TrimSpace(string(b)))
 		if err != nil || len(raw) != ed25519.PublicKeySize {
-			return nil, fmt.Errorf("%s ist kein Hex-Schlüssel", e.Name())
+			return fmt.Errorf("%s ist kein Hex-Schlüssel", e.Name())
 		}
 		out = append(out, ed25519.PublicKey(raw))
-	}
-	return out, nil
+		return nil
+	})
+	return out, err
 }
 
 func short(id string) string {

@@ -12,14 +12,19 @@ import (
 	"github.com/gitmick/ktonpkg"
 )
 
-// WriteView schreibt die lesbare Ansicht einer Revision nach files/<revision>/.
+// WriteView writes the readable view of a revision to <package>/files/<revision>/, for a package
+// author building outside .kton/. An installed package stays untouched: use WriteViewTo (ADR-016).
+func (r *Revision) WriteView() (string, error) {
+	return r.WriteViewTo(filepath.Join(r.P.Dir, FilesDir, r.Label))
+}
+
+// WriteViewTo writes the readable view of a revision to dir, which it replaces.
 //
 // Die Ansicht ist abgeleitet: alles in ihr steht schon in den Registern und unter blobs/. Sie
 // entscheidet nichts und wird nicht unterschrieben. Ihre Form ist die gewohnte — kton/ray.json,
 // steps/<step>/<slot>, testdaten/<loch>/<slot> —, damit ein Mensch, ein Prüfer und ein Werkzeug,
 // das noch das alte Ordnerformat liest, sie ohne weiteres öffnen können.
-func (r *Revision) WriteView() (string, error) {
-	dir := filepath.Join(r.P.Dir, FilesDir, r.Label)
+func (r *Revision) WriteViewTo(dir string) (string, error) {
 	if err := os.RemoveAll(dir); err != nil {
 		return "", err
 	}

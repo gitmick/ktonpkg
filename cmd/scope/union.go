@@ -1,15 +1,13 @@
 package main
 
 import (
-	"crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
+	"github.com/gitmick/ktonpkg/scope"
 	nregistry "kton.dev/nekton/registry"
 	"kton.dev/plankton/core"
 	pregistry "kton.dev/plankton/registry"
@@ -23,15 +21,19 @@ type record struct {
 	Envelope json.RawMessage `json:"envelope"`
 }
 
-// writeUnion schreibt union.json, keys.json und names.json für einen kton-web-Betrachter: die
-// Records aus <wurzel>/registry/{plankton,nekton}, gelesen über den Kernel, und die Schlüssel aus
-// <wurzel>/keys und <wurzel>/registry/keys. Doppelte Records (dieselbe Id aus zwei Wurzeln) einmal.
+// writeUnion writes union.json, keys.json and names.json for a kton-web viewer: the records from
+// <root>/{plankton,nekton}, read through the kernel, and the public keys under <root>/keys at any
+// depth. A root is a package, or a repository, whose kton part is <root>/.kton (ADR-016). A record
+// found under two roots is written once.
 func writeUnion(out string, roots []string, namesPath string) error {
 	var recs []record
 	seen := map[string]bool{}
 	keys := map[string]string{}
 	for _, root := range roots {
-		preg, err := pregistry.Open(filepath.Join(root, "registry", "plankton"))
+		if _, err := os.Stat(filepath.Join(root, ".kton", "cockpit.config.json")); err == nil {
+			root = filepath.Join(root, ".kton")
+		}
+		preg, err := pregistry.Open(filepath.Join(root, scope.PlanktonDir))
 		if err != nil {
 			return err
 		}
@@ -46,7 +48,7 @@ func writeUnion(out string, roots []string, namesPath string) error {
 			}
 			recs = append(recs, record{Seq: len(recs) + 1, FotonID: r.FotonID, Envelope: env})
 		}
-		nreg, err := nregistry.Open(filepath.Join(root, "registry", "nekton"))
+		nreg, err := nregistry.Open(filepath.Join(root, scope.NektonDir))
 		if err != nil {
 			return err
 		}
@@ -61,19 +63,13 @@ func writeUnion(out string, roots []string, namesPath string) error {
 			}
 			recs = append(recs, record{Seq: len(recs) + 1, ClaimID: r.ClaimID, Envelope: env})
 		}
-		for _, d := range []string{"keys", filepath.Join("registry", "keys")} {
-			files, _ := filepath.Glob(filepath.Join(root, d, "*.pub"))
-			for _, f := range files {
-				b, err := os.ReadFile(f)
-				if err != nil {
-					return err
-				}
-				hexKey := strings.TrimSpace(string(b))
-				pub, err := hexDecodeKey(hexKey)
-				if err != nil {
-					continue // keine Schlüsseldatei in der erwarteten Form; der Betrachter prüft ohne sie
-				}
-				keys[core.KeyIDHex(pub)] = hexKey
+		if _, err := os.Stat(filepath.Join(root, scope.KeyDir)); err == nil {
+			pubs, err := scope.KeysIn(filepath.Join(root, scope.KeyDir))
+			if err != nil {
+				return err
+			}
+			for _, pub := range pubs {
+				keys[core.KeyIDHex(pub)] = hex.EncodeToString(pub)
 			}
 		}
 	}
@@ -106,12 +102,4 @@ func writeUnion(out string, roots []string, namesPath string) error {
 	}
 	emit(map[string]any{"out": out, "records": len(recs), "keys": ids})
 	return nil
-}
-
-func hexDecodeKey(s string) ([]byte, error) {
-	b, err := hex.DecodeString(s)
-	if err != nil || len(b) != ed25519.PublicKeySize {
-		return nil, fmt.Errorf("kein öffentlicher Schlüssel")
-	}
-	return b, nil
 }
