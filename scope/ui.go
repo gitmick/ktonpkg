@@ -37,6 +37,10 @@ const (
 	ControlRecord   = "record"
 )
 
+// Meanings are the one vocabulary of what a control's say means (C3.4, qms-evolution). rejected is
+// an outcome of reviewed or approved, not a meaning; verified waits for CAPA.
+var Meanings = []string{"created", "reviewed", "approved", "executed", "released", "trained-on", "delivered"}
+
 // Kind is the control's kind, decision when it says none.
 func (c Control) EffectiveKind() string {
 	if c.Kind == "" {
@@ -99,17 +103,32 @@ type UIEntry struct {
 }
 
 // Area is C3's addition to an activity entry.
+//
+// As agreed in C3.2: the scopes it reads, its queries (record, raci, training) with their params
+// bound from the shell's values, its actions (controls), its documents and governing SOP (document
+// keys the shell resolves), and the rules of another package it shows findings of.
 type Area struct {
-	Scope     string    `json:"scope,omitempty"`
-	Record    string    `json:"record,omitempty"`
-	Raci      string    `json:"raci,omitempty"`
-	Training  string    `json:"training,omitempty"`
-	Actions   []string  `json:"actions,omitempty"`
-	Documents []string  `json:"documents,omitempty"`
-	Findings  *Findings `json:"findings,omitempty"`
+	Scopes    *AreaScopes       `json:"scopes,omitempty"`
+	Record    string            `json:"record,omitempty"`
+	Raci      string            `json:"raci,omitempty"`
+	Training  string            `json:"training,omitempty"`
+	Params    map[string]string `json:"params,omitempty"` // $VAR of the area's queries -> shell value
+	Actions   []string          `json:"actions,omitempty"`
+	Documents []string          `json:"documents,omitempty"`
+	Governing string            `json:"governing,omitempty"`
+	Findings  *Findings         `json:"findings,omitempty"`
 }
 
-// Findings names another package's rules by name: the shell resolves it among admitted packages.
+// AreaScopes are the scope names an area writes records to and reads from; the shell and backend
+// resolve them.
+type AreaScopes struct {
+	Records string   `json:"records"`
+	Reads   []string `json:"reads,omitempty"`
+}
+
+// Findings names another package by name, and rule ids (the ?rule of the one finding shape, as in a
+// part's rules), not query names: the shell resolves the package among admitted packages and keeps
+// the findings whose ?rule is listed.
 type Findings struct {
 	Package string   `json:"package"`
 	Rules   []string `json:"rules"`
@@ -691,24 +710,76 @@ func (p *uiPackage) entryProblems(e UIEntry) []string {
 		}
 	}
 	if e.Area != nil {
-		if e.Slot != "activity" {
-			add("area belongs to an activity entry")
-		}
-		for _, q := range []struct{ field, name string }{{"record", e.Area.Record}, {"raci", e.Area.Raci}, {"training", e.Area.Training}} {
-			if q.name == "" {
-				continue
+		out = append(out, prefix("area: ", p.areaProblems(e.Slot, e.Area))...)
+	}
+	return out
+}
+
+var ruleID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+
+func (p *uiPackage) areaProblems(slot string, a *Area) []string {
+	var out []string
+	add := func(format string, args ...any) { out = append(out, fmt.Sprintf(format, args...)) }
+	if slot != "activity" {
+		add("belongs to an activity entry")
+	}
+	if a.Scopes == nil || strings.TrimSpace(a.Scopes.Records) == "" {
+		add("scopes.records names no scope")
+	} else {
+		for _, r := range a.Scopes.Reads {
+			if strings.TrimSpace(r) == "" {
+				add("scopes.reads has an empty name")
 			}
-			if _, ok := p.queries[q.name]; !ok {
-				add("area %s: the query %q is not in the package", q.field, q.name)
+		}
+	}
+	used := map[string]bool{}
+	for _, q := range []struct{ field, name string }{{"record", a.Record}, {"raci", a.Raci}, {"training", a.Training}} {
+		if q.name == "" {
+			continue
+		}
+		body, ok := p.queries[q.name]
+		if !ok {
+			add("%s: the query %q is not in the package", q.field, q.name)
+			continue
+		}
+		for _, v := range queryVars(body) {
+			used[v] = true
+			if _, ok := a.Params[v]; !ok {
+				add("%s: the query %q uses $%s, which params does not bind", q.field, q.name, v)
 			}
 		}
-		for _, c := range e.Area.Actions {
-			if _, ok := p.controls[c]; !ok {
-				add("area action: the control %q is not in the package", c)
-			}
+	}
+	for _, k := range sortedKeys(a.Params) {
+		if !has(ShellValues, a.Params[k]) {
+			add("param %s binds %q, which is not a shell value (%s)", k, a.Params[k], strings.Join(ShellValues, ", "))
 		}
-		if f := e.Area.Findings; f != nil && (f.Package == "" || len(f.Rules) == 0) {
-			add("area findings needs a package and rules")
+		if !used[k] {
+			add("param %s is not a $VAR of record, raci or training", k)
+		}
+	}
+	for _, c := range a.Actions {
+		if _, ok := p.controls[c]; !ok {
+			add("action: the control %q is not in the package", c)
+		}
+	}
+	for _, d := range a.Documents {
+		if strings.TrimSpace(d) == "" {
+			add("documents has an empty key")
+		}
+	}
+	if f := a.Findings; f != nil {
+		if f.Package == "" || len(f.Rules) == 0 {
+			add("findings needs a package and rules")
+		}
+		seen := map[string]bool{}
+		for _, r := range f.Rules {
+			if !ruleID.MatchString(r) {
+				add("findings rule %q is not a rule id", r)
+			}
+			if seen[r] {
+				add("findings names the rule %q twice", r)
+			}
+			seen[r] = true
 		}
 	}
 	return out

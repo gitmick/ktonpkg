@@ -49,11 +49,12 @@ type Viewer struct {
 // from the caller's input. Who signs, and in which scope, is not the package's to say, nor the
 // caller's: the host signs with its session's own key and scope (MH 03.11.).
 type Control struct {
-	Title string          `json:"title,omitempty"`
-	Kind  string          `json:"kind,omitempty"` // decision (default) or record (O1)
-	Say   Say             `json:"say"`
-	About json.RawMessage `json:"about,omitempty"`
-	Input json.RawMessage `json:"input,omitempty"` // JSON Schema, an object at the top
+	Title   string          `json:"title,omitempty"`
+	Kind    string          `json:"kind,omitempty"`    // decision (default) or record (O1)
+	Meaning string          `json:"meaning,omitempty"` // one of Meanings (C3.4)
+	Say     Say             `json:"say"`
+	About   json.RawMessage `json:"about,omitempty"`
+	Input   json.RawMessage `json:"input,omitempty"` // JSON Schema, an object at the top
 }
 
 // sessionOnly are the fields a control may not declare: the signer and scope are the session's.
@@ -224,6 +225,17 @@ func (r *Revision) VerticleProblems() []string {
 		}
 		if c.Kind != "" && c.Kind != ControlDecision && c.Kind != ControlRecord {
 			add("control %q: kind %q is not decision or record", n, c.Kind)
+		}
+		if c.Meaning != "" && !has(Meanings, c.Meaning) {
+			add("control %q: meaning %q is not one of %s", n, c.Meaning, strings.Join(Meanings, ", "))
+		}
+		for _, t := range says {
+			var tpl map[string]json.RawMessage
+			if body, ok := ts[t]; ok && json.Unmarshal(body, &tpl) == nil {
+				if _, has := tpl["meaning"]; has {
+					add("the template %q says a meaning, which nekton ignores: a meaning belongs to the control that says it", t)
+				}
+			}
 		}
 		for _, t := range says {
 			if _, ok := ts[t]; !ok {
