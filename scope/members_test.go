@@ -160,3 +160,41 @@ func TestRevision_ViewerTreeProblems(t *testing.T) {
 		t.Fatalf("an at that is not a commit must be reported, got %q", got)
 	}
 }
+
+// kton-review #174 F1: a member claim signed with the package key can carry any name. A name that
+// could lead a reader outside its folder fails Verify, VerticleProblems, Members and ViewerTrees.
+func TestVerify_RefusesMemberNamesThatLeaveTheFolder(t *testing.T) {
+	for _, name := range []string{
+		"viewers/table/../../../ZZ-escape.txt", "viewers/table/./x", "viewers//x", "/etc/x",
+		`viewers\table\x`, "C:x", "content/a/", "..",
+	} {
+		t.Run(name, func(t *testing.T) {
+			r, err := buildUI(t, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			h, err := r.P.PutBlob([]byte("escape\n"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := r.Claim(h, PartOf, member(RoleViewerFile, map[string]any{"name": name})); err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Join(r.P.Verify(), "\n"); !strings.Contains(got, "name") || !strings.Contains(got, RoleViewerFile) {
+				t.Fatalf("Verify must refuse the name %q, got %q", name, got)
+			}
+			if len(r.VerticleProblems()) == 0 {
+				t.Fatal("VerticleProblems must refuse it")
+			}
+			if _, err := r.Members(); err == nil {
+				t.Fatal("Members must refuse it")
+			}
+			if _, err := r.ViewerTrees(); err == nil {
+				t.Fatal("ViewerTrees must refuse it")
+			}
+			if _, err := r.AddViewerFile("table", strings.TrimPrefix(name, "viewers/table/"), []byte("x")); err == nil {
+				t.Fatal("AddViewerFile must refuse it")
+			}
+		})
+	}
+}

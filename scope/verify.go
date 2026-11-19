@@ -77,6 +77,13 @@ func (p *Package) Verify() []string {
 			}
 			v := value(c)
 			role := str(v["role"])
+			for _, k := range []string{"name", "path"} {
+				if n, ok := v[k]; ok {
+					if msg := memberNameProblem(str(n)); msg != "" {
+						add("revision %s: %s %s: %s", r.Label, role, short(c.Subject), msg)
+					}
+				}
+			}
 			switch role {
 			case RoleRay, RoleStep, RoleRun:
 				f, ok := preg.Foton(c.Subject)

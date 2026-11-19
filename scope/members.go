@@ -35,6 +35,11 @@ func (r *Revision) Members() ([]Member, error) {
 		if !hashPattern.MatchString(h) {
 			return nil, fmt.Errorf("revision %s: the part %q is not named by a sha256 hash", r.Label, c.Subject)
 		}
+		if n, ok := v["name"]; ok {
+			if msg := memberNameProblem(str(n)); msg != "" {
+				return nil, fmt.Errorf("revision %s: a %s %s", r.Label, str(v["role"]), msg)
+			}
+		}
 		out = append(out, Member{Role: str(v["role"]), Name: str(v["name"]), Hash: h})
 	}
 	sort.Slice(out, func(i, j int) bool {

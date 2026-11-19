@@ -3,6 +3,7 @@ package scope
 import (
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // Profile ist die Art eines Pakets: was es enthält und welche Regeln für es gelten. Sie steht als
@@ -57,6 +58,9 @@ func (r *Revision) addNamed(role, name string, body []byte) (string, error) {
 	if name == "" {
 		return "", fmt.Errorf("a %s needs a name", role)
 	}
+	if msg := memberNameProblem(name); msg != "" {
+		return "", fmt.Errorf("a %s %s", role, msg)
+	}
 	h, err := r.P.PutBlob(body)
 	if err != nil {
 		return "", err
@@ -86,6 +90,9 @@ func (r *Revision) named(role string) (map[string][]byte, error) {
 		v := value(c)
 		if str(v["role"]) != role {
 			continue
+		}
+		if msg := memberNameProblem(str(v["name"])); msg != "" {
+			return nil, fmt.Errorf("revision %s: a %s %s", r.Label, role, msg)
 		}
 		body, err := r.P.Blob(c.Subject)
 		if err != nil {
@@ -128,4 +135,22 @@ func Names(m map[string][]byte) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// memberNameProblem says what is wrong with a member's name or path, or "" when nothing is. A name
+// is a relative path with "/" between non-empty segments: no ".", "..", leading "/", backslash or
+// colon, so no consumer that writes members to disk can be led outside its folder (kton-review F1).
+func memberNameProblem(name string) string {
+	if strings.ContainsAny(name, "\\:") {
+		return fmt.Sprintf("name %q has a backslash or a colon", name)
+	}
+	for _, seg := range strings.Split(name, "/") {
+		switch seg {
+		case "":
+			return fmt.Sprintf("name %q has an empty segment or a leading or trailing /", name)
+		case ".", "..":
+			return fmt.Sprintf("name %q has a %s segment", name, seg)
+		}
+	}
+	return ""
 }
