@@ -36,7 +36,7 @@ func (r *Revision) AddRun(env core.Envelope, pub ed25519.PublicKey, kind string,
 	outputs map[string][]byte) (string, error) {
 	p := r.P
 	if core.VerifiedSignerKeyID(env, []ed25519.PublicKey{pub}) == "" {
-		return "", fmt.Errorf("der Lauf ist nicht mit dem angegebenen Schlüssel unterschrieben")
+		return "", fmt.Errorf("the run is not signed with the given key")
 	}
 	if err := p.AddKey(pub); err != nil {
 		return "", err
@@ -51,11 +51,11 @@ func (r *Revision) AddRun(env core.Envelope, pub ed25519.PublicKey, kind string,
 	}
 	f, ok := reg.Foton(id)
 	if !ok {
-		return "", fmt.Errorf("der Lauf %s ist nach dem Aufnehmen nicht lesbar", short(id))
+		return "", fmt.Errorf("run %s cannot be read after it was added", short(id))
 	}
 	for _, o := range f.Outputs {
 		if o.Hash == "" {
-			return "", fmt.Errorf("der Record %s hat eine Ausgabe ohne Hash (%s): ein Potential, kein Lauf", short(id), o.Path)
+			return "", fmt.Errorf("record %s has an output without a hash (%s): a potential, not a run", short(id), o.Path)
 		}
 	}
 	obj := map[string]any{"kind": kind}
@@ -69,14 +69,14 @@ func (r *Revision) AddRun(env core.Envelope, pub ed25519.PublicKey, kind string,
 	for _, o := range f.Outputs {
 		body, ok := outputs[o.Path]
 		if !ok {
-			return "", fmt.Errorf("die Bytes der Ausgabe %s des Laufs fehlen", o.Path)
+			return "", fmt.Errorf("the bytes of the run's output %s are missing", o.Path)
 		}
 		h, err := p.PutBlob(body)
 		if err != nil {
 			return "", err
 		}
 		if h != o.Hash {
-			return "", fmt.Errorf("die Ausgabe %s hat den Hash %s, der Lauf nennt %s", o.Path, short(h), short(o.Hash))
+			return "", fmt.Errorf("output %s has the hash %s; the run names %s", o.Path, short(h), short(o.Hash))
 		}
 		if role == "" {
 			continue

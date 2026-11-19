@@ -102,10 +102,10 @@ type Options struct {
 // Create legt ein Paket an: den Seed, der das Dokument nennt.
 func Create(dir, name string, key ed25519.PrivateKey, opt Options) (*Package, error) {
 	if name == "" {
-		return nil, fmt.Errorf("ein Paket braucht einen Namen")
+		return nil, fmt.Errorf("a package needs a name")
 	}
 	if entries, err := os.ReadDir(dir); err == nil && len(entries) > 0 {
-		return nil, fmt.Errorf("%s ist nicht leer — ein Paket entsteht neu", dir)
+		return nil, fmt.Errorf("%s is not empty: a package is created in a new folder", dir)
 	}
 	p := &Package{Dir: dir, Name: name, key: key, clock: opt.Clock}
 	if p.clock == nil {
@@ -140,7 +140,7 @@ func Open(dir string) (*Package, error) {
 		}
 	}
 	if len(roots) != 1 {
-		return nil, fmt.Errorf("%s: genau ein Seed ohne parent erwartet, gefunden %d", dir, len(roots))
+		return nil, fmt.Errorf("%s: expected exactly one seed without a parent, found %d", dir, len(roots))
 	}
 	return &Package{Dir: dir, ID: roots[0].ID, Name: roots[0].Name, clock: time.Now}, nil
 }
@@ -165,7 +165,7 @@ type Revision struct {
 // NewRevision öffnet eine Revision.
 func (p *Package) NewRevision(label string) (*Revision, error) {
 	if label == "" {
-		return nil, fmt.Errorf("eine Revision braucht eine Bezeichnung")
+		return nil, fmt.Errorf("a revision needs a label")
 	}
 	id, err := p.seed(p.Name+"@"+label, p.ID)
 	if err != nil {
@@ -201,7 +201,7 @@ func (p *Package) Revision(label string) (*Revision, error) {
 			return r, nil
 		}
 	}
-	return nil, fmt.Errorf("keine Revision %q", label)
+	return nil, fmt.Errorf("no revision %q", label)
 }
 
 // Claim schreibt einen Claim in die Kette der Revision und gibt seine Id zurück.
@@ -272,14 +272,14 @@ func (p *Package) Blob(hash string) ([]byte, error) {
 		return nil, err
 	}
 	if !s.Has(hash) {
-		return nil, fmt.Errorf("%s liegt nicht im Paket", hash)
+		return nil, fmt.Errorf("%s is not in the package", hash)
 	}
 	body, err := os.ReadFile(p.blobPath(hash))
 	if err != nil {
 		return nil, err
 	}
 	if got := core.HashBytes(body); got != hash {
-		return nil, fmt.Errorf("die Bytes zu %s haben den Hash %s", hash, got)
+		return nil, fmt.Errorf("the bytes for %s have the hash %s", hash, got)
 	}
 	return body, nil
 }
@@ -294,7 +294,7 @@ func (p *Package) blobPath(hash string) string {
 
 func (p *Package) keyID() (string, error) {
 	if p.key == nil {
-		return "", fmt.Errorf("das Paket ist nur zum Lesen geöffnet")
+		return "", fmt.Errorf("the package is open read-only")
 	}
 	return core.KeyIDHex(p.key.Public().(ed25519.PublicKey)), nil
 }
@@ -366,7 +366,7 @@ func (p *Package) addClaim(spec nclaim.Spec) (string, error) {
 		return "", err
 	}
 	if _, _, err := reg.Add(env); err != nil {
-		return "", fmt.Errorf("das nekton-Register hat %s abgelehnt: %w", id, err)
+		return "", fmt.Errorf("the nekton registry refused %s: %w", id, err)
 	}
 	return id, nil
 }
@@ -389,10 +389,10 @@ func (p *Package) head(scope string) (string, error) {
 	}
 	heads, _, ok := reg.Heads(scope)
 	if !ok {
-		return "", fmt.Errorf("kein Scope %s im Paket", scope)
+		return "", fmt.Errorf("no scope %s in the package", scope)
 	}
 	if len(heads) != 1 {
-		return "", fmt.Errorf("der Scope %s hat %d Köpfe — eine Revision wird in einer Linie geschrieben", scope, len(heads))
+		return "", fmt.Errorf("scope %s has %d heads; a revision is written in one line", scope, len(heads))
 	}
 	return heads[0], nil
 }
@@ -443,7 +443,7 @@ type seedInfo struct{ ID, Name, Parent string }
 
 func readSeeds(dir string) ([]seedInfo, error) {
 	if _, err := os.Stat(filepath.Join(dir, NektonDir)); err != nil {
-		return nil, fmt.Errorf("%s ist kein Paket: %s fehlt", dir, NektonDir)
+		return nil, fmt.Errorf("%s is not a package: %s is missing", dir, NektonDir)
 	}
 	reg, err := nregistry.Open(filepath.Join(dir, NektonDir))
 	if err != nil {

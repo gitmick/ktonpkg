@@ -26,7 +26,7 @@ import (
 // steps run in an image pinned by digest. FromBundle stays for old kton-package/1 bundles.
 func FromBundle(b *ktonpkg.Bundle, dir, label string, key ed25519.PrivateKey, opt Options) (*Package, *Revision, error) {
 	if b.Ray == nil || (b.Package.Kind != ktonpkg.KindRay && b.Package.Kind != ktonpkg.KindTool) {
-		return nil, nil, fmt.Errorf("%s ist weder ein Workflow- noch ein Werkzeugpaket", b.Dir)
+		return nil, nil, fmt.Errorf("%s is neither a workflow nor a tool package", b.Dir)
 	}
 	profile := ProfileWorkflow
 	if b.Package.Kind == ktonpkg.KindTool {
@@ -55,7 +55,7 @@ func FromBundle(b *ktonpkg.Bundle, dir, label string, key ed25519.PrivateKey, op
 	fetch := func(h string) ([]byte, error) {
 		rel, ok := byHash[h]
 		if !ok {
-			return nil, fmt.Errorf("keine Datei zu %s im Paket", h)
+			return nil, fmt.Errorf("no file for %s in the package", h)
 		}
 		return b.ReadFile(rel)
 	}
@@ -67,7 +67,7 @@ func FromBundle(b *ktonpkg.Bundle, dir, label string, key ed25519.PrivateKey, op
 		if h.Type == ktonpkg.HoleFile {
 			body, err := b.ReadFile(h.Default)
 			if err != nil {
-				return nil, nil, fmt.Errorf("Testdaten von %s: %w", h.Name, err)
+				return nil, nil, fmt.Errorf("test data of %s: %w", h.Name, err)
 			}
 			testData[h.Name] = body
 		} else {

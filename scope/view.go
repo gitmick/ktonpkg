@@ -66,7 +66,7 @@ func (r *Revision) WriteViewTo(dir string) (string, error) {
 				}
 				var s ktonpkg.Spectrum
 				if err := json.Unmarshal(body, &s); err != nil {
-					return "", fmt.Errorf("das Spectrum %s: %w", short(c.Subject), err)
+					return "", fmt.Errorf("spectrum %s: %w", short(c.Subject), err)
 				}
 				b.Spectrum = &s
 			case RoleDocument, RoleReference:

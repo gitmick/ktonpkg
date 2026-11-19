@@ -142,7 +142,7 @@ func (r *Revision) AddRay(ray *ktonpkg.Ray, fetch ktonpkg.Fetch, testData map[st
 					return "", err
 				}
 				if h != in.Hash {
-					return "", fmt.Errorf("Step %s, %s: die Bytes haben den Hash %s, nicht %s", id, slot, h, in.Hash)
+					return "", fmt.Errorf("step %s, %s: the bytes have the hash %s, not %s", id, slot, h, in.Hash)
 				}
 				if _, err := r.Claim(h, PartOf, member(RoleCode, map[string]any{"step": id, "slot": slot})); err != nil {
 					return "", err
@@ -178,7 +178,7 @@ func (r *Revision) AddRay(ray *ktonpkg.Ray, fetch ktonpkg.Fetch, testData map[st
 	rayID, err := p.addSpec(foton.Spec{Inputs: inputs, Outputs: outputs,
 		Protocol: &foton.ProtocolSpec{Kind: RayKind, Descriptor: toMap(desc)}})
 	if err != nil {
-		return "", fmt.Errorf("der Ray: %w", err)
+		return "", fmt.Errorf("the ray: %w", err)
 	}
 	rayExtra := map[string]any{"name": ray.Name}
 	// What a hole is for and who fills it is not identity (Ray.ID leaves it out); it travels here.
@@ -213,7 +213,7 @@ func (r *Revision) AddRay(ray *ktonpkg.Ray, fetch ktonpkg.Fetch, testData map[st
 		}
 		hole := ray.Hole(name)
 		if hole == nil {
-			return "", fmt.Errorf("Testdaten für %q, aber der Ray hat kein solches Loch", name)
+			return "", fmt.Errorf("test data for %q, but the ray has no such hole", name)
 		}
 		extra := map[string]any{"hole": name, "ray": rayID}
 		if hole.Slot != "" {
@@ -239,7 +239,7 @@ func (r *Revision) RayID() (string, error) {
 			return c.Subject, nil
 		}
 	}
-	return "", fmt.Errorf("die Revision %s enthält keinen Ray", r.Label)
+	return "", fmt.Errorf("revision %s holds no ray", r.Label)
 }
 
 // Ray liest den Ray einer Revision aus den Records zurück. Feste Eingaben zeigen auf
@@ -274,7 +274,7 @@ func (r *Revision) Ray() (*ktonpkg.Ray, error) {
 		}
 	}
 	if rayID == "" {
-		return nil, fmt.Errorf("die Revision %s enthält keinen Ray", r.Label)
+		return nil, fmt.Errorf("revision %s holds no ray", r.Label)
 	}
 	reg, err := pregistry.Open(filepath.Join(r.P.Dir, PlanktonDir))
 	if err != nil {
@@ -282,11 +282,11 @@ func (r *Revision) Ray() (*ktonpkg.Ray, error) {
 	}
 	rf, ok := reg.Foton(rayID)
 	if !ok {
-		return nil, fmt.Errorf("der Ray %s liegt nicht im Paket", rayID)
+		return nil, fmt.Errorf("ray %s is not in the package", rayID)
 	}
 	var desc rayDescriptor
 	if err := fromMap(rf.Protocol.Descriptor, &desc); err != nil {
-		return nil, fmt.Errorf("der Deskriptor des Rays: %w", err)
+		return nil, fmt.Errorf("the ray's descriptor: %w", err)
 	}
 	wire := map[string]string{}
 	for _, w := range desc.Wiring {
@@ -296,7 +296,7 @@ func (r *Revision) Ray() (*ktonpkg.Ray, error) {
 	for _, st := range desc.Steps {
 		f, ok := reg.Foton(st.Potential)
 		if !ok {
-			return nil, fmt.Errorf("das Potential von %s (%s) liegt nicht im Paket", st.ID, st.Potential)
+			return nil, fmt.Errorf("the potential of %s (%s) is not in the package", st.ID, st.Potential)
 		}
 		s := ktonpkg.Step{ID: st.ID, Label: labels[st.Potential], Rationale: rationales[st.Potential]}
 		cmd, _ := f.Protocol.Descriptor["command"].(map[string]any)
@@ -423,14 +423,14 @@ func (p *Package) addPotential(f *core.Foton) (string, error) {
 	}
 	want, err := f.FotonID()
 	if err == nil && want != id {
-		return "", fmt.Errorf("der Kernel vergibt %s, ktonpkg rechnet %s", id, want)
+		return "", fmt.Errorf("the kernel assigns %s, ktonpkg computes %s", id, want)
 	}
 	return id, nil
 }
 
 func (p *Package) addSpec(spec foton.Spec) (string, error) {
 	if p.key == nil {
-		return "", fmt.Errorf("das Paket ist nur zum Lesen geöffnet")
+		return "", fmt.Errorf("the package is open read-only")
 	}
 	env, id, err := foton.SignWith(spec, ed25519.PrivateKey(p.key))
 	if err != nil {
@@ -441,7 +441,7 @@ func (p *Package) addSpec(spec foton.Spec) (string, error) {
 		return "", err
 	}
 	if got != id {
-		return "", fmt.Errorf("das Register vergibt %s für %s", got, id)
+		return "", fmt.Errorf("the registry assigns %s for %s", got, id)
 	}
 	return id, nil
 }

@@ -74,7 +74,7 @@ func (p *Package) Install(label, planktonDir, nektonDir string) (*Installation, 
 // das: die Records des Pakets bleiben an einer Stelle, im Paket.
 func (p *Package) Check(label string) (*Installation, error) {
 	if problems := p.Verify(); len(problems) > 0 {
-		return nil, fmt.Errorf("das Paket hat %d Strukturbefund(e), erster: %s", len(problems), problems[0])
+		return nil, fmt.Errorf("the package has %d structural problem(s), the first: %s", len(problems), problems[0])
 	}
 	r, err := p.Revision(label)
 	if err != nil {
@@ -91,7 +91,7 @@ func (p *Package) Check(label string) (*Installation, error) {
 		}
 	}
 	if in.Seal == "" {
-		return nil, fmt.Errorf("die Revision %s ist nicht versiegelt", label)
+		return nil, fmt.Errorf("revision %s is not sealed", label)
 	}
 	in.Ray, _ = r.RayID()
 

@@ -55,7 +55,7 @@ func (r *Revision) AddQuery(name string, body []byte) (string, error) {
 
 func (r *Revision) addNamed(role, name string, body []byte) (string, error) {
 	if name == "" {
-		return "", fmt.Errorf("ein %s braucht einen Namen", role)
+		return "", fmt.Errorf("a %s needs a name", role)
 	}
 	h, err := r.P.PutBlob(body)
 	if err != nil {
@@ -117,7 +117,7 @@ func (p *Package) Sealed() (*Revision, ClaimInfo, error) {
 			return r, seals[i], nil
 		}
 	}
-	return nil, ClaimInfo{}, fmt.Errorf("das Paket %s hat keine versiegelte Revision", p.Name)
+	return nil, ClaimInfo{}, fmt.Errorf("package %s has no sealed revision", p.Name)
 }
 
 // Names gibt die Schlüssel einer Map sortiert zurück.

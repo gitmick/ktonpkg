@@ -44,12 +44,12 @@ func (p *Package) Verify() []string {
 	}
 	for _, rec := range nreg.Records(0) {
 		if core.VerifiedSignerKeyID(rec.Envelope, keys) == "" {
-			add("der Claim %s ist von keinem beiliegenden Schlüssel unterschrieben", short(rec.ClaimID))
+			add("claim %s is not signed by any key in the package", short(rec.ClaimID))
 		}
 	}
 	for _, rec := range preg.Records(0) {
 		if core.VerifiedSignerKeyID(rec.Envelope, keys) == "" {
-			add("der Record %s ist von keinem beiliegenden Schlüssel unterschrieben", short(rec.FotonID))
+			add("record %s is not signed by any key in the package", short(rec.FotonID))
 		}
 	}
 
@@ -61,12 +61,12 @@ func (p *Package) Verify() []string {
 	aliases := map[string]int{}           // revision → number of alias files
 	for _, r := range revs {
 		if _, _, ok := nreg.Heads(r.ID); !ok {
-			add("die Revision %s hat keine lesbare Kette", r.Label)
+			add("revision %s has no readable chain", r.Label)
 			continue
 		}
 		claims, err := r.Claims()
 		if err != nil {
-			add("Revision %s: %v", r.Label, err)
+			add("revision %s: %v", r.Label, err)
 			continue
 		}
 		inRev[r.ID] = map[string]bool{r.ID: true}
@@ -81,38 +81,38 @@ func (p *Package) Verify() []string {
 			case RoleRay, RoleStep, RoleRun:
 				f, ok := preg.Foton(c.Subject)
 				if !ok {
-					add("Revision %s: %s %s liegt nicht im Paket", r.Label, role, short(c.Subject))
+					add("revision %s: %s %s is not in the package", r.Label, role, short(c.Subject))
 					continue
 				}
 				if role == RoleRay {
 					var desc rayDescriptor
 					if err := fromMap(f.Protocol.Descriptor, &desc); err != nil {
-						add("Revision %s: der Ray %s ist nicht lesbar: %v", r.Label, short(c.Subject), err)
+						add("revision %s: ray %s cannot be read: %v", r.Label, short(c.Subject), err)
 						continue
 					}
 					for _, s := range desc.Steps {
 						if _, ok := preg.Foton(s.Potential); !ok {
-							add("Revision %s: der Ray nennt das Potential von %s, das nicht im Paket liegt", r.Label, s.ID)
+							add("revision %s: the ray names the potential of %s, which is not in the package", r.Label, s.ID)
 						}
 					}
 				}
 			default:
 				body, err := p.Blob(c.Subject)
 				if err != nil {
-					add("Revision %s: %s %s: %v", r.Label, role, short(c.Subject), err)
+					add("revision %s: %s %s: %v", r.Label, role, short(c.Subject), err)
 				} else if role == RoleAliases {
 					if err := ParseAliases(body); err != nil {
-						add("Revision %s: %v", r.Label, err)
+						add("revision %s: %v", r.Label, err)
 					}
 					if aliases[r.ID]++; aliases[r.ID] == 2 {
-						add("Revision %s has more than one alias file", r.Label)
+						add("revision %s has more than one alias file", r.Label)
 					}
 				}
 				// Eine Ausgabe, die einen Lauf nennt, muss eine Ausgabe dieses Laufs sein.
 				if run := str(v["run"]); run != "" {
 					f, ok := preg.Foton(run)
 					if !ok {
-						add("Revision %s: %s %s nennt den Lauf %s, der nicht im Paket liegt", r.Label, role, str(v["path"]), short(run))
+						add("revision %s: %s %s names run %s, which is not in the package", r.Label, role, str(v["path"]), short(run))
 						break
 					}
 					found := false
@@ -120,7 +120,7 @@ func (p *Package) Verify() []string {
 						found = found || o.Hash == c.Subject
 					}
 					if !found {
-						add("Revision %s: %s %s ist keine Ausgabe des Laufs %s", r.Label, role, str(v["path"]), short(run))
+						add("revision %s: %s %s is not an output of run %s", r.Label, role, str(v["path"]), short(run))
 					}
 				}
 			}
@@ -130,7 +130,7 @@ func (p *Package) Verify() []string {
 	for _, r := range revs {
 		if prof, _ := r.Profile(); prof == ProfileVerticle {
 			for _, msg := range r.VerticleProblems() {
-				add("Revision %s: %s", r.Label, msg)
+				add("revision %s: %s", r.Label, msg)
 			}
 		}
 	}
@@ -141,18 +141,18 @@ func (p *Package) Verify() []string {
 	for _, s := range seals {
 		chain, ok := inRev[s.Subject]
 		if !ok {
-			add("das Siegel %s nennt keine Revision dieses Pakets", short(s.ID))
+			add("seal %s names no revision of this package", short(s.ID))
 			continue
 		}
 		if h := str(s.Object["hash"]); !chain[h] {
-			add("das Siegel %s nennt einen Kopf, der nicht in der Kette der Revision steht", short(s.ID))
+			add("seal %s names a head that is not in the revision's chain", short(s.ID))
 		}
 	}
 	// Seeds, die weder das Paket noch eine seiner Revisionen sind, gehören nicht hierher.
 	seeds, _ := readSeeds(p.Dir)
 	for _, s := range seeds {
 		if s.ID != p.ID && s.Parent != p.ID {
-			add("der Seed %s (%s) gehört nicht zu diesem Paket", short(s.ID), s.Name)
+			add("seed %s (%s) does not belong to this package", short(s.ID), s.Name)
 		}
 	}
 	sort.Strings(out)
@@ -164,7 +164,7 @@ func (p *Package) Verify() []string {
 func (p *Package) keys() ([]ed25519.PublicKey, error) {
 	out, err := KeysIn(filepath.Join(p.Dir, KeyDir))
 	if err != nil {
-		return nil, fmt.Errorf("%s fehlt", KeyDir)
+		return nil, fmt.Errorf("%s is missing", KeyDir)
 	}
 	return out, nil
 }
@@ -187,7 +187,7 @@ func KeysIn(dir string) ([]ed25519.PublicKey, error) {
 		}
 		raw, err := hex.DecodeString(strings.TrimSpace(string(b)))
 		if err != nil || len(raw) != ed25519.PublicKeySize {
-			return fmt.Errorf("%s ist kein Hex-Schlüssel", e.Name())
+			return fmt.Errorf("%s is not a hex public key", e.Name())
 		}
 		out = append(out, ed25519.PublicKey(raw))
 		return nil

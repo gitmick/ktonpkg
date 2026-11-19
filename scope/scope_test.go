@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -205,10 +206,10 @@ func TestVerify_ReportsTamperedBytesAndForeignSignatures(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := strings.Join(p.Verify(), "\n")
-	if !strings.Contains(got, "haben den Hash") {
+	if !strings.Contains(got, "have the hash") {
 		t.Errorf("die veränderten Bytes werden nicht gemeldet:\n%s", got)
 	}
-	if !strings.Contains(got, "keinem beiliegenden Schlüssel") {
+	if !strings.Contains(got, "is not signed by any key in the package") {
 		t.Errorf("der fremd unterschriebene Claim wird nicht gemeldet:\n%s", got)
 	}
 }
@@ -351,5 +352,34 @@ func TestFromBundle_AnExistingPackageGetsANewRevision(t *testing.T) {
 	}
 	if _, _, err := FromBundle(b, dir, "v2", key, Options{Clock: fixedClock()}); err == nil {
 		t.Fatal("a second v2 must be refused")
+	}
+}
+
+// Verify's reasons are shown to users verbatim (package.check refusals): English, no German left.
+func TestVerify_ReasonsAreEnglish(t *testing.T) {
+	_, p, r, _ := convert(t)
+	var blob string
+	cs, _ := r.Claims()
+	for _, c := range cs {
+		if c.Predicate == PartOf && str(value(c)["role"]) == RoleCode {
+			blob = c.Subject
+		}
+	}
+	if err := os.WriteFile(p.blobPath(blob), []byte("changed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stranger := &Package{Dir: p.Dir, ID: p.ID, Name: p.Name, key: newKey(t), clock: fixedClock()}
+	if _, err := stranger.claim(r.ID, p.ID, Description, map[string]any{"value": "x"}); err != nil {
+		t.Fatal(err)
+	}
+	got := p.Verify()
+	if len(got) == 0 {
+		t.Fatal("tampered package verifies")
+	}
+	german := regexp.MustCompile(`[äöüß]|\b(der|die|das|ist|nicht|kein|keine|liegt|nennt|fehlt|Paket|Schlüssel)\b`)
+	for _, m := range got {
+		if german.MatchString(m) {
+			t.Errorf("German reason: %s", m)
+		}
 	}
 }
