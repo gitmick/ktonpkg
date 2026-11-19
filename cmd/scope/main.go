@@ -73,6 +73,9 @@ func main() {
 			if id, err := r.RayID(); err == nil {
 				entry["rayId"] = id
 			}
+			if prof, _ := r.Profile(); prof == scope.ProfileVerticle {
+				entry["ui"] = uiNames(r)
+			}
 			rs = append(rs, entry)
 		}
 		out["revisions"] = rs
@@ -203,6 +206,7 @@ func main() {
 		ms, err := r.MCPTools()
 		check(err)
 		out["viewers"], out["controls"], out["mcp"] = keys(vs), keys(cs), keys(ms)
+		out["ui"] = uiNames(r)
 		if id, err := r.RayID(); err == nil {
 			out["ray"] = id
 		}
@@ -389,4 +393,21 @@ func revisionArg(args []string) *scope.Revision {
 	r, _, err := p.Sealed()
 	check(err)
 	return r
+}
+
+// uiNames lists a revision's ui part: slot entries (name -> slot), blocks, compositions, content.
+func uiNames(r *scope.Revision) map[string]any {
+	ui, err := r.UIEntries()
+	check(err)
+	bs, err := r.Blocks()
+	check(err)
+	cs, err := r.Compositions()
+	check(err)
+	content, err := r.Content()
+	check(err)
+	slots := map[string]string{}
+	for n, e := range ui {
+		slots[n] = e.Slot
+	}
+	return map[string]any{"slots": slots, "blocks": keys(bs), "compositions": keys(cs), "content": scope.Names(content)}
 }

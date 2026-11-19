@@ -17,8 +17,8 @@ import (
 )
 
 // A verticle is a package that brings, besides templates and queries, the parts a host needs to
-// offer a kind of work: viewers, controls and MCP tools — and, where the work is a computation, its
-// ray. Design: workstreams/active/cockpit/verticleformat/2026-11-02-verticle-profile.md.
+// offer a kind of work: viewers, controls and MCP tools, its ui part (slot entries, blocks,
+// compositions and their content; ui.go, v0.9.0) — and, where the work is a computation, its ray. Design: workstreams/active/cockpit/verticleformat/2026-11-02-verticle-profile.md.
 //
 // All three new parts are declarations, not code. A control is a say of one of the package's own
 // templates, signed with the caller's key; an MCP tool binds an input schema to one of the package's
