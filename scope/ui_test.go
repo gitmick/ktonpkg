@@ -350,3 +350,53 @@ func with(m map[string]string, k, v string) map[string]string {
 	m[k] = v
 	return m
 }
+
+// Layout arranges one level's parts: every part placed once, areas are part ids and rectangles,
+// sizes from the closed set; report and deck keep their order.
+func TestBuildVerticle_ChecksLayout(t *testing.T) {
+	part := func(id string) string {
+		return `{"id":"` + id + `","heading":"` + id + `","blocks":[{"use":"text","file":"content/text/intro.md"}]}`
+	}
+	dash := func(kind, layout string, ids ...string) map[string]string {
+		var ps []string
+		for _, id := range ids {
+			ps = append(ps, part(id))
+		}
+		return map[string]string{"ui/compositions/dash.json": `{"kind":"` + kind + `","layout":` + layout + `,"parts":[` + strings.Join(ps, ",") + `]}`}
+	}
+	grid := `{"type":"grid","columns":["1fr","3fr","240px"],"rows":["auto","50%"],"areas":[["filter","graph","card"],["filter","graph","more"]],"narrow":"tabs"}`
+	if _, err := buildUI(t, dash("view", grid, "filter", "graph", "card", "more")); err != nil {
+		t.Fatalf("a grid must build: %v", err)
+	}
+	nested := map[string]string{"ui/compositions/dash.json": `{"kind":"view","layout":{"type":"split","ratio":0.3},"parts":[` + part("list") +
+		`,{"id":"record","heading":"Record","layout":{"type":"tabs","active":"history"},"parts":[` + part("details") + `,` + part("history") + `]}]}`}
+	if _, err := buildUI(t, nested); err != nil {
+		t.Fatalf("split with tabs in a part must build: %v", err)
+	}
+	for _, c := range []struct {
+		name string
+		edit map[string]string
+		want string
+	}{
+		{"unknown type", dash("view", `{"type":"masonry"}`, "a"), `layout type "masonry" is not one of`},
+		{"css in a size", dash("view", `{"type":"columns","columns":["calc(100% - 1px)"]}`, "a"), `layout size "calc(100% - 1px)"`},
+		{"part not placed", dash("view", grid, "filter", "graph", "card", "more", "extra"), `does not place the part "extra"`},
+		{"area not a part", dash("view", grid, "filter", "graph", "card"), `names "more", which is not a part here`},
+		{"area not a rectangle", dash("view", `{"type":"grid","columns":["1fr","1fr"],"areas":[["a","b"],["b","b"]]}`, "a", "b"), `the area of "b" is not a rectangle`},
+		{"ragged grid", dash("view", `{"type":"grid","columns":["1fr","1fr"],"areas":[["a","b"],["a"]]}`, "a", "b"), "row 2 has 1 cells, not 2"},
+		{"sizes do not match", dash("view", `{"type":"grid","columns":["1fr"],"areas":[["a","b"]]}`, "a", "b"), "2 columns of areas but 1 column sizes"},
+		{"split of three", dash("view", `{"type":"split"}`, "a", "b", "c"), "split places exactly two named parts"},
+		{"ratio out of range", dash("view", `{"type":"split","ratio":1.5}`, "a", "b"), "ratio 1.5 is not between 0 and 1"},
+		{"field of another type", dash("view", `{"type":"tabs","ratio":0.5}`, "a", "b"), "layout ratio belongs to split, not tabs"},
+		{"active not a part", dash("view", `{"type":"tabs","active":"zz"}`, "a", "b"), `layout active "zz" is not a part here`},
+		{"layout on a report", dash("report", `{"type":"tabs"}`, "a", "b"), "layout on a report"},
+		{"layout on a leaf part", map[string]string{"ui/compositions/dash.json": `{"kind":"view","parts":[{"id":"a","layout":{"type":"tabs"},"blocks":[{"use":"text","file":"content/text/intro.md"}]}]}`}, "this part has none"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := buildUI(t, c.edit)
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("want a refusal with %q, got %v", c.want, err)
+			}
+		})
+	}
+}

@@ -161,6 +161,7 @@ type Composition struct {
 	EachPart    []Use              `json:"eachPart,omitempty"`
 	Emits       map[string]string  `json:"emits,omitempty"` // event -> own var
 	Render      *RenderRef         `json:"render,omitempty"`
+	Layout      *Layout            `json:"layout,omitempty"`
 }
 
 // VarDecl is a composition variable.
@@ -187,6 +188,7 @@ type Part struct {
 	Params      map[string]string `json:"params,omitempty"`
 	Emits       map[string]string `json:"emits,omitempty"`
 	Every       *Every            `json:"every,omitempty"`
+	Layout      *Layout           `json:"layout,omitempty"` // arranges this part's own parts
 }
 
 // Use places a block.
@@ -205,6 +207,134 @@ type Use struct {
 	Scope   json.RawMessage            `json:"scope,omitempty"`
 	Every   *Every                     `json:"every,omitempty"`
 	Acts    []Act                      `json:"acts,omitempty"`
+}
+
+// Layout arranges the parts of one level (a composition's parts, or a part's parts); it only
+// places them. A host that cannot draw it shows the plain order. report and deck keep the order.
+type Layout struct {
+	Type      string     `json:"type"`                // stack (default), columns, grid, tabs, split
+	Columns   []string   `json:"columns,omitempty"`   // columns, grid: sizes
+	Rows      []string   `json:"rows,omitempty"`      // grid: sizes, one per row of areas
+	Areas     [][]string `json:"areas,omitempty"`     // grid: rows of part ids, "." an empty cell
+	Ratio     float64    `json:"ratio,omitempty"`     // split: the first part's share, 0 < ratio < 1
+	Direction string     `json:"direction,omitempty"` // split: row (default) or column
+	Active    string     `json:"active,omitempty"`    // tabs: the part shown first (default: the first)
+	Narrow    string     `json:"narrow,omitempty"`    // stack (default) or tabs, below the host's width
+}
+
+// LayoutTypes are the layouts a host draws.
+var LayoutTypes = []string{"stack", "columns", "grid", "tabs", "split"}
+
+// size is a layout size: fr, px, % or auto, nothing else, so a layout cannot carry CSS.
+var size = regexp.MustCompile(`^(auto|(0|[1-9][0-9]{0,4})(\.[0-9]{1,3})?(fr|px|%))$`)
+
+// layoutProblems checks one level's layout against the parts it places.
+func layoutProblems(l *Layout, parts []Part) []string {
+	var out []string
+	add := func(format string, args ...any) { out = append(out, fmt.Sprintf(format, args...)) }
+	if !has(LayoutTypes, l.Type) {
+		return []string{fmt.Sprintf("layout type %q is not one of %s", l.Type, strings.Join(LayoutTypes, ", "))}
+	}
+	for _, sz := range append(append([]string(nil), l.Columns...), l.Rows...) {
+		if !size.MatchString(sz) {
+			add("layout size %q is not <n>fr, <n>px, <n>%% or auto", sz)
+		}
+	}
+	switch l.Narrow {
+	case "", "stack", "tabs":
+	default:
+		add("layout narrow %q is not stack or tabs", l.Narrow)
+	}
+	ids := map[string]bool{}
+	named := true
+	for _, pt := range parts {
+		if pt.ID == "" || pt.From != "" {
+			named = false
+		}
+		ids[pt.ID] = true
+	}
+	only := func(field string, set bool, types ...string) {
+		if set && !has(types, l.Type) {
+			add("layout %s belongs to %s, not %s", field, strings.Join(types, " or "), l.Type)
+		}
+	}
+	only("columns", len(l.Columns) > 0, "columns", "grid")
+	only("rows", len(l.Rows) > 0, "grid")
+	only("areas", len(l.Areas) > 0, "grid")
+	only("ratio", l.Ratio != 0, "split")
+	only("direction", l.Direction != "", "split")
+	only("active", l.Active != "", "tabs")
+	switch l.Type {
+	case "columns":
+		if len(l.Columns) == 0 {
+			add("layout columns needs columns")
+		}
+	case "tabs":
+		if l.Active != "" && !ids[l.Active] {
+			add("layout active %q is not a part here", l.Active)
+		}
+	case "split":
+		if len(parts) != 2 || !named {
+			add("layout split places exactly two named parts")
+		}
+		if l.Ratio != 0 && (l.Ratio <= 0 || l.Ratio >= 1) {
+			add("layout ratio %v is not between 0 and 1", l.Ratio)
+		}
+		if l.Direction != "" && l.Direction != "row" && l.Direction != "column" {
+			add("layout direction %q is not row or column", l.Direction)
+		}
+	case "grid":
+		if !named {
+			add("layout grid places named parts only: no unnamed part, no placeholder (from)")
+		}
+		if len(l.Areas) == 0 {
+			add("layout grid needs areas")
+			break
+		}
+		width := len(l.Areas[0])
+		if len(l.Columns) != width {
+			add("layout grid has %d columns of areas but %d column sizes", width, len(l.Columns))
+		}
+		if len(l.Rows) > 0 && len(l.Rows) != len(l.Areas) {
+			add("layout grid has %d rows of areas but %d row sizes", len(l.Areas), len(l.Rows))
+		}
+		box := map[string][4]int{} // id -> min row, min col, max row, max col
+		count := map[string]int{}
+		for r, row := range l.Areas {
+			if len(row) != width {
+				add("layout grid row %d has %d cells, not %d", r+1, len(row), width)
+			}
+			for c, id := range row {
+				if id == "." {
+					continue
+				}
+				if !ids[id] {
+					add("layout grid names %q, which is not a part here", id)
+					continue
+				}
+				count[id]++
+				b, ok := box[id]
+				if !ok {
+					b = [4]int{r, c, r, c}
+				}
+				b[0], b[1] = min(b[0], r), min(b[1], c)
+				b[2], b[3] = max(b[2], r), max(b[3], c)
+				box[id] = b
+			}
+		}
+		for _, id := range sortedKeys(box) {
+			b := box[id]
+			if count[id] != (b[2]-b[0]+1)*(b[3]-b[1]+1) {
+				add("layout grid: the area of %q is not a rectangle", id)
+			}
+		}
+		for _, pt := range parts {
+			if pt.ID != "" && count[pt.ID] == 0 {
+				add("layout grid does not place the part %q", pt.ID)
+			}
+		}
+	}
+	return out
 }
 
 // Every repeats a use or a part over a query's rows.
@@ -989,6 +1119,13 @@ func (p *uiPackage) compositionProblems(name string, c Composition) []string {
 		}
 	}
 	walk(c.Parts, 1)
+	if c.Layout != nil {
+		if static {
+			add("layout on a %s: a %s keeps the order of its parts, so a layout would mean nothing", c.Kind, c.Kind)
+		} else {
+			out = append(out, layoutProblems(c.Layout, c.Parts)...)
+		}
+	}
 	for _, in := range sortedKeys(placeholders) {
 		if placeholders[in] > 1 {
 			add("the input %q is placed %d times; one placeholder per input", in, placeholders[in])
@@ -1011,6 +1148,15 @@ func prefix(p string, msgs []string) []string {
 func (p *uiPackage) partProblems(x *compCtx, pt Part, ids map[string]bool, placeholders map[string]int) []string {
 	var out []string
 	add := func(format string, args ...any) { out = append(out, fmt.Sprintf(format, args...)) }
+	if pt.Layout != nil {
+		if len(pt.Parts) == 0 {
+			add("layout arranges a part's parts; this part has none")
+		} else if x.c.Kind == "report" || x.c.Kind == "deck" {
+			add("layout in a %s means nothing: it keeps the order of its parts", x.c.Kind)
+		} else {
+			out = append(out, layoutProblems(pt.Layout, pt.Parts)...)
+		}
+	}
 	if pt.ID != "" {
 		if ids[pt.ID] {
 			add("the id %q is used twice in the composition", pt.ID)
