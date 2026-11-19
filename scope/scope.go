@@ -244,7 +244,10 @@ type ClaimInfo struct {
 	Predicate string
 	Object    map[string]any
 	Prev      string
-	Signer    string // keyid
+	// Signer is the keyid of a key in the package's keys/ under which the envelope's signature
+	// verifies; empty when none does. Not the keyid the envelope declares: that one the signature
+	// does not cover (kton-review K1).
+	Signer string
 }
 
 // --- Bytes -----------------------------------------------------------------------------------------
@@ -400,6 +403,7 @@ func (p *Package) chain(scope string) ([]ClaimInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+	keys, _ := p.keys() // no keys/: no claim has a verified signer
 	byPrev := map[string]ClaimInfo{}
 	for _, rec := range reg.Records(0) {
 		st, _, err := nclaim.ParseEnvelope(rec.Envelope)
@@ -420,9 +424,7 @@ func (p *Package) chain(scope string) ([]ClaimInfo, error) {
 		if json.Unmarshal(st.Predicate, &body) == nil {
 			ci.Object = body.Object
 		}
-		if len(rec.Envelope.Signatures) > 0 {
-			ci.Signer = rec.Envelope.Signatures[0].KeyID
-		}
+		ci.Signer = core.VerifiedSignerKeyID(rec.Envelope, keys)
 		byPrev[pr.Prev] = ci
 	}
 	var out []ClaimInfo

@@ -639,44 +639,87 @@ func (p *uiPackage) carriedProblems(here string, trees map[string]map[string][]b
 	ids := map[string]string{}
 	manifests := map[string]*viewerManifest{}
 	for _, v := range sortedKeys(trees) {
-		id, err := ktonpkg.TreeIDOf(trees[v])
-		if err != nil {
-			add("viewer tree %q: %v", v, err)
-			continue
+		id, m, probs := readViewerTree(v, trees[v])
+		out = append(out, probs...)
+		if id != "" {
+			ids[v] = id
 		}
-		ids[v] = id
-		body, ok := trees[v]["viewer.json"]
-		if !ok {
-			add("viewer tree %q has no viewer.json", v)
-			continue
+		if m != nil {
+			manifests[v] = m
 		}
-		var m viewerManifest
-		if err := json.Unmarshal(body, &m); err != nil {
-			add("viewer tree %q: viewer.json: %v", v, err)
-			continue
-		}
-		if m.Viewer != v {
-			add("viewer tree %q: viewer.json says viewer %q; it must name its folder (kton-web's key is viewer)", v, m.Viewer)
-		}
-		manifests[v] = &m
 	}
 	pinned := map[string]bool{}
-	checkPin := func(what string, v Viewer) {
-		id, carried := ids[v.Viewer]
+	for _, pin := range p.pins() {
+		id, carried := ids[pin.v.Viewer]
 		if !carried {
-			return
+			continue
 		}
-		pinned[v.Viewer] = true
-		if v.Tree != id {
-			add("%s pins the carried viewer %q at tree %s; its files have the tree %s", what, v.Viewer, v.Tree, id)
+		pinned[pin.v.Viewer] = true
+		if pin.v.Tree != id {
+			add("%s pins the carried viewer %q at tree %s; its files have the tree %s", pin.what, pin.v.Viewer, pin.v.Tree, id)
 		}
-		if v.At != here {
-			add("%s: a carried viewer's at is %q (package@revision), not %q", what, here, v.At)
+		if pin.v.At != here {
+			add("%s: a carried viewer's at is %q (package@revision), not %q", pin.what, here, pin.v.At)
 		}
 	}
+	out = append(out, p.blockViewerProblems(manifests)...)
+	for _, v := range sortedKeys(trees) {
+		if !pinned[v] {
+			add("the package carries the viewer tree %q, but no viewer or block pins it", v)
+		}
+	}
+	return out
+}
+
+// readViewerTree computes a viewer tree's id and reads its viewer.json, which must name the viewer.
+func readViewerTree(v string, files map[string][]byte) (string, *viewerManifest, []string) {
+	id, err := ktonpkg.TreeIDOf(files)
+	if err != nil {
+		return "", nil, []string{fmt.Sprintf("viewer tree %q: %v", v, err)}
+	}
+	body, ok := files["viewer.json"]
+	if !ok {
+		return id, nil, []string{fmt.Sprintf("viewer tree %q has no viewer.json", v)}
+	}
+	var m viewerManifest
+	if err := json.Unmarshal(body, &m); err != nil {
+		return id, nil, []string{fmt.Sprintf("viewer tree %q: viewer.json: %v", v, err)}
+	}
+	if m.Viewer != v {
+		return id, &m, []string{fmt.Sprintf("viewer tree %q: viewer.json says viewer %q; it must name its folder (kton-web's key is viewer)", v, m.Viewer)}
+	}
+	return id, &m, nil
+}
+
+type viewerPin struct {
+	what string
+	v    Viewer
+}
+
+// pins are the viewer pins of the revision: each viewer declaration, and each block that pins its
+// viewer inline ({viewer, at, tree}) rather than naming a declaration.
+func (p *uiPackage) pins() []viewerPin {
+	var out []viewerPin
 	for _, n := range sortedKeys(p.viewers) {
-		checkPin(fmt.Sprintf("viewer %q", n), p.viewers[n])
+		out = append(out, viewerPin{fmt.Sprintf("viewer %q", n), p.viewers[n]})
 	}
+	for _, n := range sortedKeys(p.blocks) {
+		var s string
+		if json.Unmarshal(p.blocks[n].Viewer, &s) == nil {
+			continue
+		}
+		if v, err := decode[Viewer](p.blocks[n].Viewer); err == nil {
+			out = append(out, viewerPin{fmt.Sprintf("block %q", n), v})
+		}
+	}
+	return out
+}
+
+// blockViewerProblems checks every block on a viewer whose viewer.json is in manifests: it emits and
+// takes only what viewer.json declares, with the same types.
+func (p *uiPackage) blockViewerProblems(manifests map[string]*viewerManifest) []string {
+	var out []string
+	add := func(format string, args ...any) { out = append(out, fmt.Sprintf(format, args...)) }
 	for _, n := range sortedKeys(p.blocks) {
 		b := p.blocks[n]
 		var pin Viewer
@@ -685,7 +728,6 @@ func (p *uiPackage) carriedProblems(here string, trees map[string]map[string][]b
 			pin = p.viewers[s]
 		} else if v, err := decode[Viewer](b.Viewer); err == nil {
 			pin = v
-			checkPin(fmt.Sprintf("block %q", n), v)
 		}
 		m := manifests[pin.Viewer]
 		if m == nil {
@@ -716,10 +758,55 @@ func (p *uiPackage) carriedProblems(here string, trees map[string]map[string][]b
 			}
 		}
 	}
-	for _, v := range sortedKeys(trees) {
-		if !pinned[v] {
-			add("the package carries the viewer tree %q, but no viewer or block pins it", v)
+	return out
+}
+
+var commitPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
+
+// ViewerTreeProblems checks a viewer tree the host fetched from kton-web for this revision, with the
+// same checks the build runs on a carried tree: every pin of the viewer names a 40-hex commit (at)
+// and the tree id of these files; viewer.json names the viewer; every block on it emits and takes
+// only what viewer.json declares, with the same types. files maps a path in the tree to its bytes,
+// as TreeIDOf takes them. A viewer the package carries is the build's to check, not this.
+func (r *Revision) ViewerTreeProblems(viewer string, files map[string][]byte) []string {
+	vs, err := r.Viewers()
+	if err != nil {
+		return []string{err.Error()}
+	}
+	bs, err := r.Blocks()
+	if err != nil {
+		return []string{err.Error()}
+	}
+	trees, err := r.ViewerTrees()
+	if err != nil {
+		return []string{err.Error()}
+	}
+	if _, carried := trees[viewer]; carried {
+		return []string{fmt.Sprintf("the package carries the viewer %q; its tree is checked at build, not fetched", viewer)}
+	}
+	p := &uiPackage{viewers: vs, blocks: bs}
+	var out []string
+	add := func(format string, args ...any) { out = append(out, fmt.Sprintf(format, args...)) }
+	id, m, probs := readViewerTree(viewer, files)
+	out = append(out, probs...)
+	pinned := false
+	for _, pin := range p.pins() {
+		if pin.v.Viewer != viewer {
+			continue
 		}
+		pinned = true
+		if id != "" && pin.v.Tree != id {
+			add("%s pins the viewer %q at tree %s; the fetched files have the tree %s", pin.what, viewer, pin.v.Tree, id)
+		}
+		if !commitPattern.MatchString(pin.v.At) {
+			add("%s: a fetched viewer's at is a 40-hex kton-web commit, not %q", pin.what, pin.v.At)
+		}
+	}
+	if !pinned {
+		add("no viewer or block of %s@%s pins the viewer %q", r.P.Name, r.Label, viewer)
+	}
+	if m != nil {
+		out = append(out, p.blockViewerProblems(map[string]*viewerManifest{viewer: m})...)
 	}
 	return out
 }
