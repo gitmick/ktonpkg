@@ -165,7 +165,7 @@ func TestRevision_ViewerTreeProblems(t *testing.T) {
 // could lead a reader outside its folder fails Verify, VerticleProblems, Members and ViewerTrees.
 func TestVerify_RefusesMemberNamesThatLeaveTheFolder(t *testing.T) {
 	for _, name := range []string{
-		"viewers/table/../../../ZZ-escape.txt", "viewers/table/./x", "viewers//x", "/etc/x",
+		"viewers/table/../../../ZZ-escape.txt", "viewers/table/./x", "viewers/table/review 10:30.md", "viewers//x", "/etc/x",
 		`viewers\table\x`, "C:x", "content/a/", "..",
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -177,7 +177,14 @@ func TestVerify_RefusesMemberNamesThatLeaveTheFolder(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := r.Claim(h, PartOf, member(RoleViewerFile, map[string]any{"name": name})); err != nil {
+			if _, err := r.Claim(h, PartOf, member(RoleViewerFile, map[string]any{"name": name})); err == nil {
+				t.Fatal("Revision.Claim must refuse the name on write")
+			}
+			if _, err := r.Claim(h, PartOf, member(RoleDocument, map[string]any{"path": name})); err == nil {
+				t.Fatal("Revision.Claim must refuse the path on write")
+			}
+			// A claim signed with the package key past the writers' checks (kton-review's probe).
+			if _, err := r.P.claim(r.ID, h, PartOf, member(RoleViewerFile, map[string]any{"name": name})); err != nil {
 				t.Fatal(err)
 			}
 			if got := strings.Join(r.P.Verify(), "\n"); !strings.Contains(got, "name") || !strings.Contains(got, RoleViewerFile) {

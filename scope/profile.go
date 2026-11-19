@@ -140,6 +140,9 @@ func Names(m map[string][]byte) []string {
 // memberNameProblem says what is wrong with a member's name or path, or "" when nothing is. A name
 // is a relative path with "/" between non-empty segments: no ".", "..", leading "/", backslash or
 // colon, so no consumer that writes members to disk can be led outside its folder (kton-review F1).
+// The colon is refused anywhere, not only as a drive prefix: on NTFS "a:b" writes the alternate
+// data stream b of a, and the cockpit and the shell run on Windows hosts too. One rule, checked
+// on write (Revision.Claim) and on read (Verify, the named readers, Members).
 func memberNameProblem(name string) string {
 	if strings.ContainsAny(name, "\\:") {
 		return fmt.Sprintf("name %q has a backslash or a colon", name)

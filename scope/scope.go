@@ -205,7 +205,20 @@ func (p *Package) Revision(label string) (*Revision, error) {
 }
 
 // Claim schreibt einen Claim in die Kette der Revision und gibt seine Id zurück.
+// An isPartOf claim whose name or path breaks the member-name rule is refused here, so every
+// writer (Add*, FromBundle, tool, ray, add-run) refuses what Verify would.
 func (r *Revision) Claim(subject, predicate string, object map[string]any) (string, error) {
+	if predicate == PartOf {
+		if v, ok := object["value"].(map[string]any); ok {
+			for _, k := range []string{"name", "path"} {
+				if n, ok := v[k]; ok {
+					if msg := memberNameProblem(str(n)); msg != "" {
+						return "", fmt.Errorf("a %s %s", str(v["role"]), msg)
+					}
+				}
+			}
+		}
+	}
 	return r.P.claim(r.ID, subject, predicate, object)
 }
 
