@@ -750,7 +750,7 @@ func (b *Bundle) checkTestdaten(add func(step, slot, msg string)) {
 // `skip` nimmt den relativen Pfad und sagt, was nicht mitzählt — Gebautes,
 // Zwischenstände, die Buchhaltung einer Versionsverwaltung.
 func TreeID(dir string, skip func(rel string) bool) (string, error) {
-	var refs []any
+	files := map[string][]byte{}
 	err := filepath.Walk(dir, func(p string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -776,19 +776,33 @@ func TreeID(dir string, skip func(rel string) bool) (string, error) {
 		if err != nil {
 			return err
 		}
-		refs = append(refs, map[string]any{"path": rel, "hash": core.HashBytes(body)})
+		files[rel] = body
 		return nil
 	})
 	if err != nil {
 		return "", err
 	}
-	if len(refs) == 0 {
+	if len(files) == 0 {
 		return "", fmt.Errorf("%s enthält keine Dateien", dir)
 	}
-	sort.Slice(refs, func(i, j int) bool {
-		return refs[i].(map[string]any)["path"].(string) <
-			refs[j].(map[string]any)["path"].(string)
-	})
+	return TreeIDOf(files)
+}
+
+// TreeIDOf is TreeID over files already read, by slash path: the same id for the same files,
+// wherever they lie (a folder, or a package's blobs).
+func TreeIDOf(files map[string][]byte) (string, error) {
+	if len(files) == 0 {
+		return "", fmt.Errorf("a tree without files has no id")
+	}
+	paths := make([]string, 0, len(files))
+	for p := range files {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	refs := make([]any, 0, len(paths))
+	for _, p := range paths {
+		refs = append(refs, map[string]any{"path": p, "hash": core.HashBytes(files[p])})
+	}
 	raw, err := core.CanonValue(map[string]any{"files": refs})
 	if err != nil {
 		return "", err

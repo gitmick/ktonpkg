@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gitmick/ktonpkg"
 )
 
 // uiSrc is the render-shaped verticle of verticleSrc plus a ui part: an alias file, a decision and a
@@ -218,6 +220,73 @@ func TestBuildVerticle_HostilePackages(t *testing.T) {
 				t.Fatalf("good must build: %v", err)
 			case c.Expect != "accept" && (err == nil || !strings.Contains(err.Error(), w)):
 				t.Fatalf("%s: want a refusal with %q, got %v", c.Reason, w, err)
+			}
+		})
+	}
+}
+
+func TestTreeIDOf_MatchesThePublishedVector(t *testing.T) {
+	id, err := ktonpkg.TreeIDOf(map[string][]byte{
+		"viewer.json":  []byte(`{"name":"demo","module":"index.js"}` + "\n"),
+		"index.js":     []byte("export default function(ctx){}\n"),
+		"assets/a.css": []byte("body{}\n"),
+	})
+	if err != nil || id != "sha256:8a70967c00267cad43505a7b0b72c8c70311cbd8a3dd44d959a948e1778ebe1b" {
+		t.Fatalf("TreeIDOf = %s, %v (the vector given to kton-web, round 4)", id, err)
+	}
+}
+
+// A viewer tree the package carries lives at viewers/<viewer>/; its pin names this revision and the
+// tree's id, and the block on it emits and takes only what its viewer.json declares.
+func TestBuildVerticle_ChecksACarriedViewer(t *testing.T) {
+	tree := map[string][]byte{
+		"viewer.json": []byte(`{"name":"table","module":"index.js","emits":{"select":{"from":"intent.select","type":"iri"},` +
+			`"focus":{"from":"state.focus","type":"hash"}},"accepts":{"columns":{"set":"literal"},"mask":{"set":"literal"},"focus":"iri"}}`),
+		"index.js": []byte("export function mount(el){}\n"),
+	}
+	id, err := ktonpkg.TreeIDOf(tree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	carried := func(at, treeID, viewerJSON string) map[string]string {
+		e := map[string]string{
+			"viewers/table/index.js":    string(tree["index.js"]),
+			"viewers/table/viewer.json": string(tree["viewer.json"]),
+			"ui/blocks/table.json": `{"viewer":{"viewer":"table","at":"` + at + `","tree":"` + treeID + `"},"requires":["query@1"],
+				"options":{"columns":{"set":"literal"},"mask":{"set":"literal"},"focus":"iri"},"emits":{"select":"iri","focus":"hash"}}`,
+		}
+		if viewerJSON != "" {
+			e["viewers/table/viewer.json"] = viewerJSON
+		}
+		return e
+	}
+	r, err := buildUI(t, carried("render@v1", id, ""))
+	if err != nil {
+		t.Fatalf("a carried viewer pinned right must build: %v", err)
+	}
+	trees, err := r.ViewerTrees()
+	if err != nil || len(trees["table"]) != 2 {
+		t.Fatalf("ViewerTrees: %v %v", trees, err)
+	}
+	if got, _ := ktonpkg.TreeIDOf(trees["table"]); got != id {
+		t.Fatalf("the carried tree reads back as %s, pinned %s", got, id)
+	}
+	other := `{"name":"table","module":"index.js","emits":{"select":{"type":"iri"}},"accepts":{"columns":{"set":"literal"},"mask":{"set":"literal"},"focus":"iri"}}`
+	otherID, _ := ktonpkg.TreeIDOf(map[string][]byte{"viewer.json": []byte(other), "index.js": tree["index.js"]})
+	for _, c := range []struct {
+		name string
+		edit map[string]string
+		want string
+	}{
+		{"tree changed", carried("render@v1", "sha256:"+strings.Repeat("c", 64), ""), "its files have the tree " + id},
+		{"at not this revision", carried("render@v0", id, ""), `a carried viewer's at is "render@v1"`},
+		{"event not reported", carried("render@v1", otherID, other), `emits focus, which the viewer "table" does not report`},
+		{"tree not pinned", map[string]string{"viewers/loose/viewer.json": `{}`}, `carries the viewer tree "loose", but no viewer or block pins it`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := buildUI(t, c.edit)
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("want a refusal with %q, got %v", c.want, err)
 			}
 		})
 	}

@@ -317,6 +317,7 @@ func sortedKeys[T any](m map[string]T) []string {
 //	<src>/ui/blocks/<name>.json   Block
 //	<src>/ui/compositions/<n>.json Composition
 //	<src>/content/<path>          what compositions show, as content/<path>
+//	<src>/viewers/<viewer>/…      a viewer tree the package carries (pinned at <package>@<label>)
 //
 // Into an existing package of the same name it adds the revision (the label must be new). It refuses
 // to seal a revision whose declarations do not hold together (VerticleProblems).
@@ -360,6 +361,26 @@ func BuildVerticle(dir, name, label, src string, key ed25519.PrivateKey, opt Opt
 				return nil, nil, err
 			}
 			n++
+		}
+	}
+	if dirs, err := os.ReadDir(filepath.Join(src, "viewers")); err == nil {
+		for _, d := range dirs {
+			if !d.IsDir() {
+				continue
+			}
+			files, err := readTree(filepath.Join(src, "viewers", d.Name()))
+			if err != nil {
+				return nil, nil, err
+			}
+			for _, rel := range sortedKeys(files) {
+				if ktonpkg.SkipBuildArtefacts(rel) {
+					continue
+				}
+				if _, err := r.AddViewerFile(d.Name(), rel, files[rel]); err != nil {
+					return nil, nil, err
+				}
+				n++
+			}
 		}
 	}
 	if _, err := os.Stat(filepath.Join(src, "content")); err == nil {

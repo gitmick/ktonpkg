@@ -26,6 +26,7 @@ const (
 	RoleBlock       = "block"       // ui/blocks/<name>.json
 	RoleComposition = "composition" // ui/compositions/<name>.json
 	RoleContent     = "content"     // content/<path>: text, tables, images a composition shows
+	RoleViewerFile  = "viewer-file" // viewers/<viewer>/<path>: a viewer tree the package carries
 )
 
 // Control kinds (O1, MH 18.11.): a decision is signed with the person key through the sign dialog; a
@@ -359,6 +360,36 @@ func (r *Revision) AddContent(path string, body []byte) (string, error) {
 	return r.addNamed(RoleContent, path, body)
 }
 
+// AddViewerFile adds one file of a viewer tree the package carries (viewers/<viewer>/<path>). A
+// carried viewer is pinned like a fetched one, {viewer, at, tree}, with at = <package>@<revision
+// label>; the build checks the tree id and reads viewer.json for the block checks.
+func (r *Revision) AddViewerFile(viewer, rel string, body []byte) (string, error) {
+	if viewer == "" || strings.ContainsAny(viewer, "/\\") || rel == "" || strings.Contains(rel, "..") || strings.HasPrefix(rel, "/") {
+		return "", fmt.Errorf("viewer file %q/%q: a viewer file is viewers/<viewer>/<path> inside the package", viewer, rel)
+	}
+	return r.addNamed(RoleViewerFile, "viewers/"+viewer+"/"+rel, body)
+}
+
+// ViewerTrees are the viewer trees the package carries: viewer -> path in the tree -> bytes.
+func (r *Revision) ViewerTrees() (map[string]map[string][]byte, error) {
+	files, err := r.named(RoleViewerFile)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]map[string][]byte{}
+	for name, b := range files {
+		parts := strings.SplitN(strings.TrimPrefix(name, "viewers/"), "/", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("viewer file %q is not viewers/<viewer>/<path>", name)
+		}
+		if out[parts[0]] == nil {
+			out[parts[0]] = map[string][]byte{}
+		}
+		out[parts[0]][parts[1]] = b
+	}
+	return out, nil
+}
+
 // decodeComposition decodes strictly, nested parts and uses included (the decoder's strictness
 // reaches into nested structs).
 func decodeComposition(body []byte) (Composition, error) { return decode[Composition](body) }
@@ -431,6 +462,109 @@ func (r *Revision) uiProblems(qs, ts map[string][]byte, cs map[string]Control, v
 	}
 	for _, m := range p.cycleProblems() {
 		add("%s", m)
+	}
+	trees, err := r.ViewerTrees()
+	if err != nil {
+		return append(out, err.Error())
+	}
+	return append(out, p.carriedProblems(r.P.Name+"@"+r.Label, trees)...)
+}
+
+// viewerManifest is what the checks read of a carried viewer's viewer.json: its events with their
+// types and the state keys it accepts (round 5b (b)).
+type viewerManifest struct {
+	Emits   map[string]struct{ Type json.RawMessage } `json:"emits"`
+	Accepts map[string]json.RawMessage                `json:"accepts"`
+}
+
+// carriedProblems checks the viewer trees the package carries: each has a viewer.json, is pinned by
+// a viewer declaration or a block, and every pin of it names this revision (at) and its tree id; a
+// block on a carried viewer emits and takes only what viewer.json declares, with the same types.
+// For a viewer fetched from kton-web the same checks are install's (it fetches the tree).
+func (p *uiPackage) carriedProblems(here string, trees map[string]map[string][]byte) []string {
+	var out []string
+	add := func(format string, args ...any) { out = append(out, fmt.Sprintf(format, args...)) }
+	ids := map[string]string{}
+	manifests := map[string]*viewerManifest{}
+	for _, v := range sortedKeys(trees) {
+		id, err := ktonpkg.TreeIDOf(trees[v])
+		if err != nil {
+			add("viewer tree %q: %v", v, err)
+			continue
+		}
+		ids[v] = id
+		body, ok := trees[v]["viewer.json"]
+		if !ok {
+			add("viewer tree %q has no viewer.json", v)
+			continue
+		}
+		var m viewerManifest
+		if err := json.Unmarshal(body, &m); err != nil {
+			add("viewer tree %q: viewer.json: %v", v, err)
+			continue
+		}
+		manifests[v] = &m
+	}
+	pinned := map[string]bool{}
+	checkPin := func(what string, v Viewer) {
+		id, carried := ids[v.Viewer]
+		if !carried {
+			return
+		}
+		pinned[v.Viewer] = true
+		if v.Tree != id {
+			add("%s pins the carried viewer %q at tree %s; its files have the tree %s", what, v.Viewer, v.Tree, id)
+		}
+		if v.At != here {
+			add("%s: a carried viewer's at is %q (package@revision), not %q", what, here, v.At)
+		}
+	}
+	for _, n := range sortedKeys(p.viewers) {
+		checkPin(fmt.Sprintf("viewer %q", n), p.viewers[n])
+	}
+	for _, n := range sortedKeys(p.blocks) {
+		b := p.blocks[n]
+		var pin Viewer
+		var s string
+		if json.Unmarshal(b.Viewer, &s) == nil {
+			pin = p.viewers[s]
+		} else if v, err := decode[Viewer](b.Viewer); err == nil {
+			pin = v
+			checkPin(fmt.Sprintf("block %q", n), v)
+		}
+		m := manifests[pin.Viewer]
+		if m == nil {
+			continue
+		}
+		for _, e := range sortedKeys(b.Emits) {
+			ve, ok := m.Emits[e]
+			if !ok {
+				add("block %q emits %s, which the viewer %q does not report", n, e, pin.Viewer)
+				continue
+			}
+			bt, err1 := parseType(b.Emits[e])
+			vt, err2 := parseType(ve.Type)
+			if err1 == nil && (err2 != nil || bt != vt) {
+				add("block %q: event %s is a %s, the viewer %q reports %s", n, e, bt, pin.Viewer, string(ve.Type))
+			}
+		}
+		for _, o := range sortedKeys(b.Options) {
+			va, ok := m.Accepts[o]
+			if !ok {
+				add("block %q has the option %s, which the viewer %q does not accept", n, o, pin.Viewer)
+				continue
+			}
+			bt, err1 := parseType(b.Options[o])
+			vt, err2 := parseType(va)
+			if err1 == nil && (err2 != nil || bt != vt) {
+				add("block %q: option %s is a %s, the viewer %q accepts %s", n, o, bt, pin.Viewer, string(va))
+			}
+		}
+	}
+	for _, v := range sortedKeys(trees) {
+		if !pinned[v] {
+			add("the package carries the viewer tree %q, but no viewer or block pins it", v)
+		}
 	}
 	return out
 }
