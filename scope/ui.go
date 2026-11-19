@@ -112,7 +112,9 @@ type Area struct {
 	Record    string            `json:"record,omitempty"`
 	Raci      string            `json:"raci,omitempty"`
 	Training  string            `json:"training,omitempty"`
-	Params    map[string]string `json:"params,omitempty"` // $VAR of the area's queries -> shell value
+	Approvals string            `json:"approvals,omitempty"` // ?claim ?record ?outcome ?signer of a record
+	History   string            `json:"history,omitempty"`   // ?claim ?replaces ?replacedBy ?when: the record's chain
+	Params    map[string]string `json:"params,omitempty"`    // $VAR of the area's queries -> shell value
 	Actions   []string          `json:"actions,omitempty"`
 	Documents []string          `json:"documents,omitempty"`
 	Governing string            `json:"governing,omitempty"`
@@ -715,6 +717,37 @@ func (p *uiPackage) entryProblems(e UIEntry) []string {
 	return out
 }
 
+// The result shapes of an area's approvals and history queries. Who signed is a key (?signer); its
+// name, tier and whether it is an agent come from the host's re-verified answer (C1.3), never from
+// the query, so an agent's approval is not counted by the shell, not filtered by the data.
+var (
+	ApprovalsShape = []string{"claim", "record", "outcome", "signer"}
+	HistoryShape   = []string{"claim", "replaces", "replacedBy", "when"}
+)
+
+// missingProjection are the variables of shape a SELECT query does not project. SELECT * projects
+// all; a query that is not a SELECT projects none.
+func missingProjection(q []byte, shape []string) []string {
+	if len(shape) == 0 {
+		return nil
+	}
+	text := string(withoutComments(q))
+	m := regexp.MustCompile(`(?is)\bSELECT\b(.*?)(\bWHERE\b|\{)`).FindStringSubmatch(text)
+	if m == nil {
+		return shape
+	}
+	if strings.Contains(m[1], "*") {
+		return nil
+	}
+	var out []string
+	for _, v := range shape {
+		if !regexp.MustCompile(`\?` + regexp.QuoteMeta(v) + `\b`).MatchString(m[1]) {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
 var ruleID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 func (p *uiPackage) areaProblems(slot string, a *Area) []string {
@@ -733,7 +766,11 @@ func (p *uiPackage) areaProblems(slot string, a *Area) []string {
 		}
 	}
 	used := map[string]bool{}
-	for _, q := range []struct{ field, name string }{{"record", a.Record}, {"raci", a.Raci}, {"training", a.Training}} {
+	for _, q := range []struct {
+		field, name string
+		shape       []string
+	}{{"record", a.Record, nil}, {"raci", a.Raci, nil}, {"training", a.Training, nil},
+		{"approvals", a.Approvals, ApprovalsShape}, {"history", a.History, HistoryShape}} {
 		if q.name == "" {
 			continue
 		}
@@ -741,6 +778,9 @@ func (p *uiPackage) areaProblems(slot string, a *Area) []string {
 		if !ok {
 			add("%s: the query %q is not in the package", q.field, q.name)
 			continue
+		}
+		for _, v := range missingProjection(body, q.shape) {
+			add("%s: the query %q does not select ?%s (%s)", q.field, q.name, v, "?"+strings.Join(q.shape, " ?"))
 		}
 		for _, v := range queryVars(body) {
 			used[v] = true
@@ -754,7 +794,7 @@ func (p *uiPackage) areaProblems(slot string, a *Area) []string {
 			add("param %s binds %q, which is not a shell value (%s)", k, a.Params[k], strings.Join(ShellValues, ", "))
 		}
 		if !used[k] {
-			add("param %s is not a $VAR of record, raci or training", k)
+			add("param %s is not a $VAR of an area query", k)
 		}
 	}
 	for _, c := range a.Actions {

@@ -299,19 +299,21 @@ func TestBuildVerticle_ChecksTheArea(t *testing.T) {
 		return map[string]string{
 			"queries/record.rq":    "SELECT ?r WHERE { ?r <https://kton.dev/v/person> $person }\n",
 			"queries/raci.rq":      "SELECT ?a ?r WHERE { ?a <https://kton.dev/v/r> ?r }\n",
+			"queries/approvals.rq": "SELECT ?claim ?record ?outcome ?signer WHERE { ?claim <https://kton.dev/v/about> $record ; <https://kton.dev/v/outcome> ?outcome ; <https://kton.dev/v/signer> ?signer }\n",
+			"queries/history.rq":   "SELECT * WHERE { ?claim <https://kton.dev/v/about> $record ; <https://kton.dev/v/replaces> ?replaces }\n",
 			"controls/attend.json": `{"kind":"record","meaning":"trained-on","say":{"template":"reads"}}`,
 			"ui/area.json":         `{"slot":"activity","label":"Training","query":"count","area":` + a + `}`,
 		}
 	}
-	good := `{"scopes":{"records":"qm.training","reads":["roles"]},"record":"record","raci":"raci",
-		"params":{"person":"subject.id"},"actions":["attend","confirm"],"documents":["SOP-02"],"governing":"SOP-02",
+	good := `{"scopes":{"records":"qm.training","reads":["roles"]},"record":"record","raci":"raci","approvals":"approvals","history":"history",
+		"params":{"person":"subject.id","record":"subject.iri"},"actions":["attend","confirm"],"documents":["SOP-02"],"governing":"SOP-02",
 		"findings":{"package":"qm-rules","rules":["SOP02-R-TRAINER-L3"]}}`
 	r, err := buildUI(t, area(good))
 	if err != nil {
 		t.Fatalf("the C3.2 area must build: %v", err)
 	}
 	ui, _ := r.UIEntries()
-	if a := ui["area"].Area; a == nil || a.Scopes.Records != "qm.training" || a.Governing != "SOP-02" || a.Params["person"] != "subject.id" {
+	if a := ui["area"].Area; a == nil || a.Scopes.Records != "qm.training" || a.Governing != "SOP-02" || a.Params["person"] != "subject.id" || a.Approvals != "approvals" {
 		t.Fatalf("area read back: %+v", ui["area"].Area)
 	}
 	cs, _ := r.Controls()
@@ -325,9 +327,10 @@ func TestBuildVerticle_ChecksTheArea(t *testing.T) {
 	}{
 		{"the old single scope", area(strings.Replace(good, `"scopes":{"records":"qm.training","reads":["roles"]}`, `"scope":"qm.training"`, 1)), `unknown field "scope"`},
 		{"no records scope", area(strings.Replace(good, `"records":"qm.training",`, ``, 1)), "scopes.records names no scope"},
-		{"unbound $VAR", area(strings.Replace(good, `"params":{"person":"subject.id"},`, ``, 1)), `uses $person, which params does not bind`},
+		{"unbound $VAR", area(strings.Replace(good, `"person":"subject.id",`, ``, 1)), `uses $person, which params does not bind`},
+		{"approvals without its shape", with(area(good), "queries/approvals.rq", "SELECT ?claim ?record ?tier WHERE { ?claim ?p $record }\n"), `approvals: the query "approvals" does not select ?outcome`},
 		{"param outside the shell values", area(strings.Replace(good, `"subject.id"`, `"env.USER"`, 1)), `binds "env.USER", which is not a shell value`},
-		{"param no query uses", area(strings.Replace(good, `{"person":"subject.id"}`, `{"person":"subject.id","doc":"subject.id"}`, 1)), "param doc is not a $VAR of record, raci or training"},
+		{"param no query uses", area(strings.Replace(good, `"record":"subject.iri"`, `"record":"subject.iri","doc":"subject.id"`, 1)), "param doc is not a $VAR of an area query"},
 		{"query name as a rule", area(strings.Replace(good, `"SOP02-R-TRAINER-L3"`, `"closed deviation date"`, 1)), "is not a rule id"},
 		{"rule twice", area(strings.Replace(good, `["SOP02-R-TRAINER-L3"]`, `["A-1","A-1"]`, 1)), `names the rule "A-1" twice`},
 		{"meaning outside C3.4", map[string]string{"controls/attend.json": `{"meaning":"rejected","say":{"template":"reads"}}`}, `meaning "rejected" is not one of`},
@@ -340,4 +343,9 @@ func TestBuildVerticle_ChecksTheArea(t *testing.T) {
 			}
 		})
 	}
+}
+
+func with(m map[string]string, k, v string) map[string]string {
+	m[k] = v
+	return m
 }
