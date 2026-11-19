@@ -494,6 +494,7 @@ func (r *Revision) uiProblems(qs, ts map[string][]byte, cs map[string]Control, v
 // viewerManifest is what the checks read of a carried viewer's viewer.json: its events with their
 // types and the state keys it accepts (round 5b (b)).
 type viewerManifest struct {
+	Viewer  string                                    `json:"viewer"`
 	Emits   map[string]struct{ Type json.RawMessage } `json:"emits"`
 	Accepts map[string]json.RawMessage                `json:"accepts"`
 }
@@ -523,6 +524,9 @@ func (p *uiPackage) carriedProblems(here string, trees map[string]map[string][]b
 		if err := json.Unmarshal(body, &m); err != nil {
 			add("viewer tree %q: viewer.json: %v", v, err)
 			continue
+		}
+		if m.Viewer != v {
+			add("viewer tree %q: viewer.json says viewer %q; it must name its folder (kton-web's key is viewer)", v, m.Viewer)
 		}
 		manifests[v] = &m
 	}

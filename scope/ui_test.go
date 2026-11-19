@@ -240,7 +240,7 @@ func TestTreeIDOf_MatchesThePublishedVector(t *testing.T) {
 // tree's id, and the block on it emits and takes only what its viewer.json declares.
 func TestBuildVerticle_ChecksACarriedViewer(t *testing.T) {
 	tree := map[string][]byte{
-		"viewer.json": []byte(`{"name":"table","module":"index.js","emits":{"select":{"from":"intent.select","type":"iri"},` +
+		"viewer.json": []byte(`{"viewer":"table","module":"index.js","emits":{"select":{"from":"intent.select","type":"iri"},` +
 			`"focus":{"from":"state.focus","type":"hash"}},"accepts":{"columns":{"set":"literal"},"mask":{"set":"literal"},"focus":"iri"}}`),
 		"index.js": []byte("export function mount(el){}\n"),
 	}
@@ -271,7 +271,7 @@ func TestBuildVerticle_ChecksACarriedViewer(t *testing.T) {
 	if got, _ := ktonpkg.TreeIDOf(trees["table"]); got != id {
 		t.Fatalf("the carried tree reads back as %s, pinned %s", got, id)
 	}
-	other := `{"name":"table","module":"index.js","emits":{"select":{"type":"iri"}},"accepts":{"columns":{"set":"literal"},"mask":{"set":"literal"},"focus":"iri"}}`
+	other := `{"viewer":"table","module":"index.js","emits":{"select":{"type":"iri"}},"accepts":{"columns":{"set":"literal"},"mask":{"set":"literal"},"focus":"iri"}}`
 	otherID, _ := ktonpkg.TreeIDOf(map[string][]byte{"viewer.json": []byte(other), "index.js": tree["index.js"]})
 	for _, c := range []struct {
 		name string
@@ -281,7 +281,8 @@ func TestBuildVerticle_ChecksACarriedViewer(t *testing.T) {
 		{"tree changed", carried("render@v1", "sha256:"+strings.Repeat("c", 64), ""), "its files have the tree " + id},
 		{"at not this revision", carried("render@v0", id, ""), `a carried viewer's at is "render@v1"`},
 		{"event not reported", carried("render@v1", otherID, other), `emits focus, which the viewer "table" does not report`},
-		{"tree not pinned", map[string]string{"viewers/loose/viewer.json": `{}`}, `carries the viewer tree "loose", but no viewer or block pins it`},
+		{"tree not pinned", map[string]string{"viewers/loose/viewer.json": `{"viewer":"loose"}`}, `carries the viewer tree "loose", but no viewer or block pins it`},
+		{"viewer.json with name, not viewer", map[string]string{"viewers/loose/viewer.json": `{"name":"loose"}`}, `viewer.json says viewer ""; it must name its folder`},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			_, err := buildUI(t, c.edit)
