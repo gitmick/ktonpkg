@@ -1,0 +1,10 @@
+{
+ "slot": "review-view",
+ "label": "Review",
+ "when": {
+  "kind": "claim"
+ },
+ "viewer": "chart",
+ "query": "items",
+ "control": "approve"
+}

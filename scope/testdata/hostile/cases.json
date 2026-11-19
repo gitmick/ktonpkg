@@ -1,0 +1,87 @@
+[
+ {
+  "dir": "good",
+  "expect": "accept",
+  "reason": "positive control: every check passes"
+ },
+ {
+  "dir": "case-malformed-json",
+  "expect": "refuse",
+  "reason": "ui/review.json is not valid JSON"
+ },
+ {
+  "dir": "case-missing-viewer",
+  "expect": "refuse",
+  "reason": "a slot names viewer 'chart' that the package does not carry"
+ },
+ {
+  "dir": "case-missing-query",
+  "expect": "refuse",
+  "reason": "a use names query 'nosuch'"
+ },
+ {
+  "dir": "case-missing-control",
+  "expect": "refuse",
+  "reason": "a slot names control 'reject' that does not exist"
+ },
+ {
+  "dir": "case-path-outside",
+  "expect": "refuse",
+  "reason": "a use names content '../../etc/passwd' outside the package"
+ },
+ {
+  "dir": "case-input-outside-closed-set",
+  "expect": "refuse",
+  "reason": "inputs bind 'env.HOME', not from the closed set"
+ },
+ {
+  "dir": "case-wired-sign",
+  "expect": "refuse",
+  "reason": "a use wires the act 'sign' into a var"
+ },
+ {
+  "dir": "case-block-emits-act",
+  "expect": "refuse",
+  "reason": "a block declaration lists 'record' as an event"
+ },
+ {
+  "dir": "case-type-mismatch",
+  "expect": "refuse",
+  "reason": "event select (iri) wired into a literal var"
+ },
+ {
+  "dir": "case-set-into-query",
+  "expect": "refuse",
+  "reason": "a set var bound to a query $VAR"
+ },
+ {
+  "dir": "case-unknown-capability",
+  "expect": "refuse",
+  "reason": "a block requires 'network@1', not in the capability list"
+ },
+ {
+  "dir": "case-duplicate-name",
+  "expect": "refuse",
+  "reason": "two ui files declare the same name 'review'"
+ },
+ {
+  "dir": "case-composition-cycle",
+  "expect": "refuse",
+  "reason": "composition a nests b, b nests a"
+ },
+ {
+  "dir": "case-depth-over-8",
+  "expect": "refuse",
+  "reason": "compositions nest 10 deep"
+ },
+ {
+  "dir": "case-report-var-no-default",
+  "expect": "refuse",
+  "reason": "a report composition reads a var without default"
+ },
+ {
+  "dir": "case-subject-as-param",
+  "expect": "refuse",
+  "reason": "a composition declares a param named 'subject'"
+ }
+]

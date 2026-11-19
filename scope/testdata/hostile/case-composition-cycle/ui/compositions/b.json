@@ -1,0 +1,15 @@
+{
+ "composition": "b",
+ "kind": "view",
+ "subject": {
+  "kind": "scope"
+ },
+ "params": [],
+ "parts": [
+  {
+   "id": "y",
+   "heading": "Y",
+   "composition": "a"
+  }
+ ]
+}
