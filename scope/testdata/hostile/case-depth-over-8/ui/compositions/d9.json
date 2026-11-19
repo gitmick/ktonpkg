@@ -1,0 +1,21 @@
+{
+ "composition": "d9",
+ "kind": "view",
+ "subject": {
+  "kind": "scope"
+ },
+ "params": [],
+ "parts": [
+  {
+   "id": "leaf",
+   "heading": "Leaf",
+   "blocks": [
+    {
+     "use": "table",
+     "query": "items",
+     "id": "leaf"
+    }
+   ]
+  }
+ ]
+}

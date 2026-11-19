@@ -17,8 +17,8 @@ import (
 )
 
 // A verticle is a package that brings, besides templates and queries, the parts a host needs to
-// offer a kind of work: viewers, controls and MCP tools — and, where the work is a computation, its
-// ray. Design: workstreams/active/cockpit/verticleformat/2026-11-02-verticle-profile.md.
+// offer a kind of work: viewers, controls and MCP tools, its ui part (slot entries, blocks,
+// compositions and their content; ui.go, v0.9.0) — and, where the work is a computation, its ray. Design: workstreams/active/cockpit/verticleformat/2026-11-02-verticle-profile.md.
 //
 // All three new parts are declarations, not code. A control is a say of one of the package's own
 // templates, signed with the caller's key; an MCP tool binds an input schema to one of the package's
@@ -50,6 +50,7 @@ type Viewer struct {
 // caller's: the host signs with its session's own key and scope (MH 03.11.).
 type Control struct {
 	Title string          `json:"title,omitempty"`
+	Kind  string          `json:"kind,omitempty"` // decision (default) or record (O1)
 	Say   Say             `json:"say"`
 	About json.RawMessage `json:"about,omitempty"`
 	Input json.RawMessage `json:"input,omitempty"` // JSON Schema, an object at the top
@@ -221,6 +222,9 @@ func (r *Revision) VerticleProblems() []string {
 		if len(says) == 0 {
 			add("control %q says no template", n)
 		}
+		if c.Kind != "" && c.Kind != ControlDecision && c.Kind != ControlRecord {
+			add("control %q: kind %q is not decision or record", n, c.Kind)
+		}
 		for _, t := range says {
 			if _, ok := ts[t]; !ok {
 				add("control %q says the template %q, which is not in the package", n, t)
@@ -274,6 +278,7 @@ func (r *Revision) VerticleProblems() []string {
 			}
 		}
 	}
+	out = append(out, r.uiProblems(qs, ts, cs, vs, ray)...)
 	return out
 }
 
@@ -308,6 +313,10 @@ func sortedKeys[T any](m map[string]T) []string {
 //	<src>/viewers/<name>.json     Viewer
 //	<src>/controls/<name>.json    Control
 //	<src>/mcp/<name>.json         MCPTool
+//	<src>/ui/<name>.json          UIEntry (a C2 slot entry)
+//	<src>/ui/blocks/<name>.json   Block
+//	<src>/ui/compositions/<n>.json Composition
+//	<src>/content/<path>          what compositions show, as content/<path>
 //
 // Into an existing package of the same name it adds the revision (the label must be new). It refuses
 // to seal a revision whose declarations do not hold together (VerticleProblems).
@@ -333,6 +342,9 @@ func BuildVerticle(dir, name, label, src string, key ed25519.PrivateKey, opt Opt
 		{"controls", ".json", r.AddControl},
 		{"viewers", ".json", r.AddViewer},
 		{"mcp", ".json", r.AddMCPTool},
+		{"ui", ".json", r.AddUI},
+		{"ui/blocks", ".json", r.AddBlock},
+		{"ui/compositions", ".json", r.AddComposition},
 	} {
 		files, err := filepath.Glob(filepath.Join(src, part.dir, "*"+part.ext))
 		if err != nil {
@@ -345,6 +357,18 @@ func BuildVerticle(dir, name, label, src string, key ed25519.PrivateKey, opt Opt
 				return nil, nil, err
 			}
 			if _, err := part.put(strings.TrimSuffix(filepath.Base(f), part.ext), body); err != nil {
+				return nil, nil, err
+			}
+			n++
+		}
+	}
+	if _, err := os.Stat(filepath.Join(src, "content")); err == nil {
+		files, err := readTree(filepath.Join(src, "content"))
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, rel := range sortedKeys(files) {
+			if _, err := r.AddContent("content/"+rel, files[rel]); err != nil {
 				return nil, nil, err
 			}
 			n++
