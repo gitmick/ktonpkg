@@ -980,7 +980,10 @@ func (p *uiPackage) entryProblems(e UIEntry) []string {
 	return out
 }
 
-// The result shapes of an area's approvals and history queries. Who signed is a key (?signer); its
+// The result shapes of an area's approvals and history queries. In both, a row is one claim about
+// the record, and ?claim is that claim: in approvals the approval (the claim with ?outcome and
+// ?signer) and ?record the record it approves; in history a claim of the record's chain. Extra
+// columns are allowed (?when, ?predicate). Who signed is a key (?signer); its
 // name, tier and whether it is an agent come from the host's re-verified answer (C1.3), never from
 // the query, so an agent's approval is not counted by the shell, not filtered by the data.
 var (
