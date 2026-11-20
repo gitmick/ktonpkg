@@ -100,6 +100,9 @@ type UIEntry struct {
 	Inputs      map[string]string `json:"inputs,omitempty"`
 	Order       int               `json:"order,omitempty"`
 	Area        *Area             `json:"area,omitempty"`
+	// Scopes is where a review-view's or record-view's signed records go (records), as an area
+	// says it; the shell shows it in the sign dialog and passes it as say --scope.
+	Scopes *AreaScopes `json:"scopes,omitempty"`
 }
 
 // Area is C3's addition to an activity entry.
@@ -855,9 +858,37 @@ func queryVars(q []byte) []string {
 	return sortedKeys(seen)
 }
 
+// scopeLabel is a records scope's label, not an IRI: dot-separated words such as qm.training or
+// dryrun1.triage. The shell and the backend resolve it; ktonpkg checks the form only.
+var scopeLabel = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*(\.[A-Za-z0-9][A-Za-z0-9_-]*)*$`)
+
+// scopesProblems checks scopes: records names one scope label, reads only labels.
+func scopesProblems(s *AreaScopes) []string {
+	var out []string
+	if s == nil || strings.TrimSpace(s.Records) == "" {
+		return []string{"scopes.records names no scope"}
+	}
+	if !scopeLabel.MatchString(s.Records) {
+		out = append(out, fmt.Sprintf("scopes.records %q is not a scope label (words separated by dots, no IRI)", s.Records))
+	}
+	for _, r := range s.Reads {
+		if !scopeLabel.MatchString(r) {
+			out = append(out, fmt.Sprintf("scopes.reads %q is not a scope label (words separated by dots, no IRI)", r))
+		}
+	}
+	return out
+}
+
 func (p *uiPackage) entryProblems(e UIEntry) []string {
 	var out []string
 	add := func(format string, args ...any) { out = append(out, fmt.Sprintf(format, args...)) }
+	if e.Scopes != nil {
+		if e.Slot != "review-view" && e.Slot != "record-view" {
+			add("scopes belong to a review-view or record-view entry (an activity's area has its own)")
+		} else {
+			out = append(out, scopesProblems(e.Scopes)...)
+		}
+	}
 	if !has(Slots, e.Slot) {
 		add("slot %q is not one of %s", e.Slot, strings.Join(Slots, ", "))
 	}
@@ -982,15 +1013,7 @@ func (p *uiPackage) areaProblems(slot string, a *Area) []string {
 	if slot != "activity" {
 		add("belongs to an activity entry")
 	}
-	if a.Scopes == nil || strings.TrimSpace(a.Scopes.Records) == "" {
-		add("scopes.records names no scope")
-	} else {
-		for _, r := range a.Scopes.Reads {
-			if strings.TrimSpace(r) == "" {
-				add("scopes.reads has an empty name")
-			}
-		}
-	}
+	out = append(out, scopesProblems(a.Scopes)...)
 	used := map[string]bool{}
 	for _, q := range []struct {
 		field, name string

@@ -465,3 +465,40 @@ func TestBuildVerticle_OptionalQueryParams(t *testing.T) {
 		})
 	}
 }
+
+// A review-view or record-view entry says where its signed records go, as an area does.
+func TestBuildVerticle_EntryScopes(t *testing.T) {
+	review := func(scopes string) map[string]string {
+		return map[string]string{"ui/review.json": `{"slot":"review-view","label":"Review","when":{"kind":"claim","type":"nk:document"},
+			"viewer":"preview","control":"confirm","query":"card","inputs":{"item":"subject.iri"},"scopes":` + scopes + `}`}
+	}
+	r, err := buildUI(t, review(`{"records":"dryrun1.triage","reads":["dryrun1","qm.lieferanten"]}`))
+	if err != nil {
+		t.Fatalf("a review-view with a records scope must build: %v", err)
+	}
+	if ui, _ := r.UIEntries(); ui["review"].Scopes == nil || ui["review"].Scopes.Records != "dryrun1.triage" {
+		t.Fatalf("scopes read back: %+v", ui["review"])
+	}
+	for _, c := range []struct {
+		name string
+		edit map[string]string
+		want string
+	}{
+		{"no records", review(`{"reads":["dryrun1"]}`), "scopes.records names no scope"},
+		{"an IRI", review(`{"records":"https://kton.dev/scope/dryrun1.triage"}`), `scopes.records "https://kton.dev/scope/dryrun1.triage" is not a scope label`},
+		{"a CURIE", review(`{"records":"qm:triage"}`), "is not a scope label"},
+		{"a space", review(`{"records":"dry run"}`), "is not a scope label"},
+		{"an empty word", review(`{"records":"dryrun1..triage"}`), "is not a scope label"},
+		{"a bad read", review(`{"records":"dryrun1.triage","reads":["x/y"]}`), `scopes.reads "x/y" is not a scope label`},
+		{"the old field", map[string]string{"ui/review.json": `{"slot":"review-view","label":"Review","when":{"kind":"claim","type":"nk:document"},"viewer":"preview","scope":"dryrun1.triage"}`}, `unknown field "scope"`},
+		{"on a home tile", map[string]string{"ui/tile.json": `{"slot":"home-tile","label":"Items","query":"count","scopes":{"records":"x"}}`}, "scopes belong to a review-view or record-view entry"},
+		{"area: an IRI", map[string]string{"ui/area.json": `{"slot":"activity","label":"A","query":"count","area":{"scopes":{"records":"urn:x"}}}`}, `scopes.records "urn:x" is not a scope label`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := buildUI(t, c.edit)
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("want a refusal with %q, got %v", c.want, err)
+			}
+		})
+	}
+}
