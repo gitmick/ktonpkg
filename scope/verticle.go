@@ -418,7 +418,7 @@ func BuildVerticle(dir, name, label, src string, key ed25519.PrivateKey, opt Opt
 	if n == 0 {
 		return nil, nil, fmt.Errorf("%s holds nothing of a verticle", src)
 	}
-	if probs := r.VerticleProblems(); len(probs) > 0 {
+	if probs := append(r.TemplateProblems(), r.VerticleProblems()...); len(probs) > 0 {
 		return nil, nil, fmt.Errorf("the verticle does not hold together: %s", strings.Join(probs, "; "))
 	}
 	if _, err := r.Seal(); err != nil {

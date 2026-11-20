@@ -111,6 +111,7 @@ func (p *Package) Verify() []string {
 					if _, err := TemplateClaims(body); err != nil {
 						add("revision %s: template %q: %v", r.Label, str(v["name"]), err)
 					}
+					// answers is checked once per revision, by TemplateProblems below.
 				} else if role == RoleAliases {
 					if err := ParseAliases(body); err != nil {
 						add("revision %s: %v", r.Label, err)
@@ -137,8 +138,11 @@ func (p *Package) Verify() []string {
 			}
 		}
 	}
-	// A verticle's declarations must name parts of the same package.
+	// A verticle's declarations must name parts of the same package; so must a template's answers.
 	for _, r := range revs {
+		for _, msg := range r.TemplateProblems() {
+			add("revision %s: %s", r.Label, msg)
+		}
 		if prof, _ := r.Profile(); prof == ProfileVerticle {
 			for _, msg := range r.VerticleProblems() {
 				add("revision %s: %s", r.Label, msg)

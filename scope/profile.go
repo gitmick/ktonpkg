@@ -49,6 +49,9 @@ func (r *Revision) AddTemplate(name string, body []byte) (string, error) {
 	if _, err := TemplateClaims(body); err != nil {
 		return "", fmt.Errorf("template %q: %w", name, err)
 	}
+	if _, err := TemplateAnswers(body); err != nil {
+		return "", fmt.Errorf("template %q: %w", name, err)
+	}
 	return r.addNamed(RoleTemplate, name, body)
 }
 

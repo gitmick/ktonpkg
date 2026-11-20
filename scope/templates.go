@@ -52,7 +52,10 @@ func BuildTemplates(dir, name, label, templateDir, queryDir string, key ed25519.
 		return nil, nil, err
 	}
 	if nt+nq == 0 {
-		return nil, nil, fmt.Errorf("weder Templates in %s noch Abfragen in %s", templateDir, queryDir)
+		return nil, nil, fmt.Errorf("neither templates in %s nor queries in %s", templateDir, queryDir)
+	}
+	if probs := r.TemplateProblems(); len(probs) > 0 {
+		return nil, nil, fmt.Errorf("the templates do not hold together: %s", strings.Join(probs, "; "))
 	}
 	if _, err := r.Seal(); err != nil {
 		return nil, nil, err
