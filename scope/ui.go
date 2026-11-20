@@ -115,6 +115,7 @@ type Area struct {
 	Approvals string            `json:"approvals,omitempty"` // ?claim ?record ?outcome ?signer of a record
 	History   string            `json:"history,omitempty"`   // ?claim ?replaces ?replacedBy ?when: the record's chain
 	Params    map[string]string `json:"params,omitempty"`    // $VAR of the area's queries -> shell value
+	Optional  []string          `json:"optional,omitempty"`  // $VARs of the area's queries that may stay unbound
 	Actions   []string          `json:"actions,omitempty"`
 	Documents []string          `json:"documents,omitempty"`
 	Governing string            `json:"governing,omitempty"`
@@ -193,20 +194,24 @@ type Part struct {
 
 // Use places a block.
 type Use struct {
-	ID      string                     `json:"id,omitempty"`
-	Use     json.RawMessage            `json:"use"`
-	Query   json.RawMessage            `json:"query,omitempty"`
-	Params  map[string]string          `json:"params,omitempty"`
-	Options map[string]json.RawMessage `json:"options,omitempty"`
-	Refine  map[string]Refine          `json:"refine,omitempty"`
-	Emits   map[string]string          `json:"emits,omitempty"`
-	Up      bool                       `json:"up,omitempty"`
-	Empty   string                     `json:"empty,omitempty"`
-	File    string                     `json:"file,omitempty"`
-	Caption string                     `json:"caption,omitempty"`
-	Scope   json.RawMessage            `json:"scope,omitempty"`
-	Every   *Every                     `json:"every,omitempty"`
-	Acts    []Act                      `json:"acts,omitempty"`
+	ID     string            `json:"id,omitempty"`
+	Use    json.RawMessage   `json:"use"`
+	Query  json.RawMessage   `json:"query,omitempty"`
+	Params map[string]string `json:"params,omitempty"`
+	// Optional are $VARs of the query that may stay unbound: never bound when not in params, or
+	// unbound while their source has no value (a var not yet picked). Unbound, the $VAR is not
+	// substituted and stays a free SPARQL variable, so the query decides what "no filter" means.
+	Optional []string                   `json:"optional,omitempty"`
+	Options  map[string]json.RawMessage `json:"options,omitempty"`
+	Refine   map[string]Refine          `json:"refine,omitempty"`
+	Emits    map[string]string          `json:"emits,omitempty"`
+	Up       bool                       `json:"up,omitempty"`
+	Empty    string                     `json:"empty,omitempty"`
+	File     string                     `json:"file,omitempty"`
+	Caption  string                     `json:"caption,omitempty"`
+	Scope    json.RawMessage            `json:"scope,omitempty"`
+	Every    *Every                     `json:"every,omitempty"`
+	Acts     []Act                      `json:"acts,omitempty"`
 }
 
 // Layout arranges the parts of one level (a composition's parts, or a part's parts); it only
@@ -1005,10 +1010,13 @@ func (p *uiPackage) areaProblems(slot string, a *Area) []string {
 		}
 		for _, v := range queryVars(body) {
 			used[v] = true
-			if _, ok := a.Params[v]; !ok {
+			if _, ok := a.Params[v]; !ok && !has(a.Optional, v) {
 				add("%s: the query %q uses $%s, which params does not bind", q.field, q.name, v)
 			}
 		}
+	}
+	for _, m := range optionalProblems(a.Optional, func(v string) bool { return used[v] }, nil) {
+		add("%s", m)
 	}
 	for _, k := range sortedKeys(a.Params) {
 		if !has(ShellValues, a.Params[k]) {
@@ -1303,7 +1311,7 @@ func (p *uiPackage) everyProblems(x *compCtx, e *Every) []string {
 	if msg != "" {
 		return append(out, "every: "+msg)
 	}
-	out = append(out, prefix("every: ", p.paramProblems(x, q, e.Params, nil))...)
+	out = append(out, prefix("every: ", p.paramProblems(x, q, e.Params, nil, nil))...)
 	return out
 }
 
@@ -1331,7 +1339,7 @@ func (p *uiPackage) queryRef(x *compCtx, raw json.RawMessage) ([]byte, string) {
 
 // paramProblems checks a use's params (and refine) against a local query: each param is a $VAR the
 // query uses, every used $VAR is bound, and no set goes into a query (v0.9.0).
-func (p *uiPackage) paramProblems(x *compCtx, q []byte, params map[string]string, refine map[string]Refine) []string {
+func (p *uiPackage) paramProblems(x *compCtx, q []byte, params map[string]string, refine map[string]Refine, optional []string) []string {
 	var out []string
 	add := func(format string, args ...any) { out = append(out, fmt.Sprintf(format, args...)) }
 	for _, k := range sortedKeys(params) {
@@ -1356,12 +1364,33 @@ func (p *uiPackage) paramProblems(x *compCtx, q []byte, params map[string]string
 			add("refine %s is not a $VAR of the query", k)
 		}
 	}
+	out = append(out, optionalProblems(optional, func(v string) bool { return has(vars, v) }, refine)...)
 	for _, v := range vars {
 		_, bound := params[v]
 		_, refined := refine[v]
-		if !bound && !refined {
+		if !bound && !refined && !has(optional, v) {
 			add("the query uses $%s, which neither params nor refine binds", v)
 		}
+	}
+	return out
+}
+
+// optionalProblems checks an optional list: each entry is a $VAR of the query (or queries), named
+// once, and not refined (refine always binds a value, so it is never unbound).
+func optionalProblems(optional []string, isVar func(string) bool, refine map[string]Refine) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, v := range optional {
+		switch {
+		case seen[v]:
+			out = append(out, fmt.Sprintf("optional %s is named twice", v))
+		case !isVar(v):
+			out = append(out, fmt.Sprintf("optional %s is not a $VAR of the query", v))
+		}
+		if _, ok := refine[v]; ok {
+			out = append(out, fmt.Sprintf("optional %s is also refined, and refine always binds it", v))
+		}
+		seen[v] = true
 	}
 	return out
 }
@@ -1400,10 +1429,10 @@ func (p *uiPackage) useProblems(x *compCtx, u Use, ids map[string]bool) []string
 		if msg != "" {
 			add("%s", msg)
 		} else {
-			out = append(out, p.paramProblems(&inner, q, u.Params, u.Refine)...)
+			out = append(out, p.paramProblems(&inner, q, u.Params, u.Refine, u.Optional)...)
 		}
-	} else if len(u.Params) > 0 || len(u.Refine) > 0 {
-		add("params and refine need a query")
+	} else if len(u.Params) > 0 || len(u.Refine) > 0 || len(u.Optional) > 0 {
+		add("params, refine and optional need a query")
 	}
 	for _, k := range sortedKeys(u.Refine) {
 		rf := u.Refine[k]

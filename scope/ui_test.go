@@ -400,3 +400,68 @@ func TestBuildVerticle_ChecksLayout(t *testing.T) {
 		})
 	}
 }
+
+// An optional $VAR may stay unbound ("all" vs "mine", S6.7): never bound when not in params, or
+// unbound while its source has no value. Checked at build like params.
+func TestBuildVerticle_OptionalQueryParams(t *testing.T) {
+	src := uiSrc(t, nil)
+	b, err := os.ReadFile(filepath.Join(src, "ui/compositions/main.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	deep := `{"use":"table","query":"card","params":{"item":"var.picked"},"empty":"show"}`
+	if !strings.Contains(string(b), deep) {
+		t.Fatal("main.json changed: no deep use")
+	}
+	main := func(use string) map[string]string {
+		return map[string]string{"ui/compositions/main.json": strings.Replace(string(b), deep, use, 1)}
+	}
+	items := `"refine":{"status":{"values":["open","done"]}}`
+	area := func(a string) map[string]string {
+		return map[string]string{
+			"queries/training.rq": "SELECT ?o WHERE { ?o <https://kton.dev/v/for> $person }\n",
+			"ui/area.json":        `{"slot":"activity","label":"Training","query":"count","area":` + a + `}`,
+		}
+	}
+	for _, c := range []struct {
+		name string
+		edit map[string]string
+	}{
+		{"never bound", main(`{"use":"table","query":"card","optional":["item"],"empty":"show"}`)},
+		{"bound while picked", main(`{"use":"table","query":"card","params":{"item":"var.picked"},"optional":["item"],"empty":"show"}`)},
+		{"area query", area(`{"scopes":{"records":"qm.training"},"training":"training","optional":["person"]}`)},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if _, err := buildUI(t, c.edit); err != nil {
+				t.Fatalf("must build: %v", err)
+			}
+		})
+	}
+	r, err := buildUI(t, main(`{"use":"table","query":"card","optional":["item"],"empty":"show"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cs, _ := r.Compositions(); cs["main"].Parts[2].Parts[0].Blocks[0].Optional[0] != "item" {
+		t.Fatalf("optional read back: %+v", cs["main"].Parts[2].Parts[0].Blocks[0])
+	}
+	for _, c := range []struct {
+		name string
+		edit map[string]string
+		want string
+	}{
+		{"still unbound without optional", main(`{"use":"table","query":"card","empty":"show"}`), "uses $item, which neither params nor refine binds"},
+		{"not a $VAR", main(`{"use":"table","query":"card","params":{"item":"var.picked"},"optional":["who"],"empty":"show"}`), "optional who is not a $VAR of the query"},
+		{"twice", main(`{"use":"table","query":"card","optional":["item","item"],"empty":"show"}`), "optional item is named twice"},
+		{"refined", map[string]string{"ui/compositions/main.json": strings.Replace(string(b), items, items+`,"optional":["status"]`, 1)}, "optional status is also refined"},
+		{"no query", map[string]string{"ui/compositions/main.json": strings.Replace(string(b), `{"use":"text","file":"content/text/intro.md"}`, `{"use":"text","file":"content/text/intro.md","optional":["x"]}`, 1)}, "params, refine and optional need a query"},
+		{"area: not a $VAR", area(`{"scopes":{"records":"qm.training"},"training":"training","optional":["person","who"]}`), "optional who is not a $VAR of the query"},
+		{"area: still unbound", area(`{"scopes":{"records":"qm.training"},"training":"training"}`), "uses $person, which params does not bind"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := buildUI(t, c.edit)
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("want a refusal with %q, got %v", c.want, err)
+			}
+		})
+	}
+}
