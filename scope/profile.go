@@ -46,6 +46,9 @@ func (r *Revision) Profile() (string, error) {
 
 // AddTemplate legt ein Claim-Template als Teil der Revision ab.
 func (r *Revision) AddTemplate(name string, body []byte) (string, error) {
+	if _, err := TemplateClaims(body); err != nil {
+		return "", fmt.Errorf("template %q: %w", name, err)
+	}
 	return r.addNamed(RoleTemplate, name, body)
 }
 

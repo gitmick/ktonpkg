@@ -107,6 +107,10 @@ func (p *Package) Verify() []string {
 				body, err := p.Blob(c.Subject)
 				if err != nil {
 					add("revision %s: %s %s: %v", r.Label, role, short(c.Subject), err)
+				} else if role == RoleTemplate {
+					if _, err := TemplateClaims(body); err != nil {
+						add("revision %s: template %q: %v", r.Label, str(v["name"]), err)
+					}
 				} else if role == RoleAliases {
 					if err := ParseAliases(body); err != nil {
 						add("revision %s: %v", r.Label, err)
