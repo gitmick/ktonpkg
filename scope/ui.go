@@ -100,8 +100,9 @@ type UIEntry struct {
 	Inputs      map[string]string `json:"inputs,omitempty"`
 	Order       int               `json:"order,omitempty"`
 	Area        *Area             `json:"area,omitempty"`
-	// Scopes is where a review-view's or record-view's signed records go (records), as an area
-	// says it; the shell shows it in the sign dialog and passes it as say --scope.
+	// Scopes is where an activity's, review-view's or record-view's signed records go (records), as
+	// an area says it; the shell shows it in the sign dialog and passes it as say --scope. An activity
+	// with an area says them in area.scopes instead.
 	Scopes *AreaScopes `json:"scopes,omitempty"`
 }
 
@@ -364,6 +365,7 @@ type Act struct {
 	Intent  string            `json:"intent"`
 	Label   string            `json:"label,omitempty"`
 	Control string            `json:"control,omitempty"`
+	From    *PackagePin       `json:"from,omitempty"` // the control is another package's, in this sealed revision
 	Ray     string            `json:"ray,omitempty"`
 	Fields  map[string]string `json:"fields,omitempty"`
 }
@@ -563,6 +565,7 @@ func (r *Revision) Content() (map[string][]byte, error) { return r.named(RoleCon
 
 // uiPackage is what the ui checks look up in the revision.
 type uiPackage struct {
+	name         string // the package's own name
 	queries      map[string][]byte
 	templates    map[string][]byte
 	controls     map[string]Control
@@ -594,7 +597,7 @@ func (r *Revision) uiProblems(qs, ts map[string][]byte, cs map[string]Control, v
 	if err != nil {
 		return []string{err.Error()}
 	}
-	p := &uiPackage{queries: qs, templates: ts, controls: cs, viewers: vs, blocks: bs, compositions: comps,
+	p := &uiPackage{name: r.P.Name, queries: qs, templates: ts, controls: cs, viewers: vs, blocks: bs, compositions: comps,
 		content: content, ray: ray, prefixes: map[string]string{}}
 	if a, err := r.Aliases(); err == nil && a != nil {
 		var al struct {
@@ -883,9 +886,12 @@ func (p *uiPackage) entryProblems(e UIEntry) []string {
 	var out []string
 	add := func(format string, args ...any) { out = append(out, fmt.Sprintf(format, args...)) }
 	if e.Scopes != nil {
-		if e.Slot != "review-view" && e.Slot != "record-view" {
-			add("scopes belong to a review-view or record-view entry (an activity's area has its own)")
-		} else {
+		switch {
+		case e.Slot != "review-view" && e.Slot != "record-view" && e.Slot != "activity":
+			add("scopes belong to an activity, review-view or record-view entry")
+		case e.Area != nil:
+			add("an activity with an area says its scopes in area.scopes, once")
+		default:
 			out = append(out, scopesProblems(e.Scopes)...)
 		}
 	}
@@ -1573,6 +1579,14 @@ func (p *uiPackage) actProblems(x *compCtx, a Act) []string {
 		if a.Ray != "" {
 			add("a %s act names a control, not a ray", a.Intent)
 		}
+		if a.From != nil {
+			// Another package's control: the form here, the rest at the host (ForeignControlProblems).
+			if strings.TrimSpace(a.Control) == "" {
+				add("a %s act from another package names no control", a.Intent)
+			}
+			out = append(out, a.From.problems(p.name)...)
+			break
+		}
 		c, ok := p.controls[a.Control]
 		if !ok {
 			add("the control %q is not in the package", a.Control)
@@ -1582,17 +1596,13 @@ func (p *uiPackage) actProblems(x *compCtx, a Act) []string {
 		if c.EffectiveKind() != want {
 			add("a %s act needs a %s control; %q is a %s", a.Intent, want, a.Control, c.EffectiveKind())
 		}
-		for _, t := range append([]string{c.Say.Template}, c.Say.Templates...) {
-			var tpl struct {
-				Fields map[string]json.RawMessage `json:"fields"`
-			}
-			if body, ok := p.templates[t]; ok && json.Unmarshal(body, &tpl) == nil {
-				fields = append(fields, sortedKeys(tpl.Fields)...)
-			}
-		}
+		fields = controlFields(c, p.templates)
 	case "run":
 		if a.Control != "" {
 			add("a run act names a ray, not a control")
+		}
+		if a.From != nil {
+			add("a run act runs this package's ray; from is for another package's control")
 		}
 		if p.ray == nil || p.ray.Name != a.Ray {
 			add("the ray %q is not in the package", a.Ray)

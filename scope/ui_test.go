@@ -476,6 +476,9 @@ func TestBuildVerticle_EntryScopes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a review-view with a records scope must build: %v", err)
 	}
+	if _, err := buildUI(t, map[string]string{"ui/roles.json": `{"slot":"activity","label":"Roles","when":{"kind":"scope"},"composition":"main","scopes":{"records":"dryrun1.runs"}}`}); err != nil {
+		t.Fatalf("an activity without an area may say its records scope: %v", err)
+	}
 	if ui, _ := r.UIEntries(); ui["review"].Scopes == nil || ui["review"].Scopes.Records != "dryrun1.triage" {
 		t.Fatalf("scopes read back: %+v", ui["review"])
 	}
@@ -491,7 +494,9 @@ func TestBuildVerticle_EntryScopes(t *testing.T) {
 		{"an empty word", review(`{"records":"dryrun1..triage"}`), "is not a scope label"},
 		{"a bad read", review(`{"records":"dryrun1.triage","reads":["x/y"]}`), `scopes.reads "x/y" is not a scope label`},
 		{"the old field", map[string]string{"ui/review.json": `{"slot":"review-view","label":"Review","when":{"kind":"claim","type":"nk:document"},"viewer":"preview","scope":"dryrun1.triage"}`}, `unknown field "scope"`},
-		{"on a home tile", map[string]string{"ui/tile.json": `{"slot":"home-tile","label":"Items","query":"count","scopes":{"records":"x"}}`}, "scopes belong to a review-view or record-view entry"},
+		{"on a home tile", map[string]string{"ui/tile.json": `{"slot":"home-tile","label":"Items","query":"count","scopes":{"records":"x"}}`}, "scopes belong to an activity, review-view or record-view entry"},
+		{"activity with an area and scopes", map[string]string{"ui/area.json": `{"slot":"activity","label":"A","query":"count","scopes":{"records":"x.y"},"area":{"scopes":{"records":"x.y"}}}`}, "says its scopes in area.scopes, once"},
+		{"activity: an IRI", map[string]string{"ui/roles.json": `{"slot":"activity","label":"Roles","when":{"kind":"scope"},"composition":"main","scopes":{"records":"urn:x"}}`}, `scopes.records "urn:x" is not a scope label`},
 		{"area: an IRI", map[string]string{"ui/area.json": `{"slot":"activity","label":"A","query":"count","area":{"scopes":{"records":"urn:x"}}}`}, `scopes.records "urn:x" is not a scope label`},
 	} {
 		t.Run(c.name, func(t *testing.T) {
