@@ -22,7 +22,10 @@ type Term struct {
 
 const xsdInteger = "http://www.w3.org/2001/XMLSchema#integer"
 
-var badIRI = regexp.MustCompile(`[\s<>"{}|\\^` + "`" + `]`)
+var (
+	badIRI  = regexp.MustCompile(`[\x00-\x20<>"{}|\\^` + "`" + `]`)
+	langTag = regexp.MustCompile(`^[A-Za-z]+(-[A-Za-z0-9]+)*$`)
+)
 
 // Sparql writes the term as SPARQL text: an IRI in <>, a literal quoted with its datatype or language.
 func (t Term) Sparql() (string, error) {
@@ -37,6 +40,9 @@ func (t Term) Sparql() (string, error) {
 		s := `"` + r.Replace(t.Value) + `"`
 		switch {
 		case t.Lang != "":
+			if !langTag.MatchString(t.Lang) {
+				return "", fmt.Errorf("not a language tag: %q", t.Lang)
+			}
 			return s + "@" + t.Lang, nil
 		case t.Datatype != "":
 			if badIRI.MatchString(t.Datatype) {

@@ -92,14 +92,26 @@ func Fill(c *Composed, results map[string]Answer) (*Filled, error) {
 	if out.Report.Document.ID == "" {
 		out.Report.Document.ID = c.Subject.IRI
 	}
+	// put writes a file once; two different files under one name is an error, never an overwrite
+	// (a table, image or diagram keeps its own name, as zusammensetzen does)
+	var clash error
+	put := func(p string, b []byte) {
+		if old, ok := out.Files[p]; ok && !bytes.Equal(old, b) && clash == nil {
+			clash = fmt.Errorf("fill: two different files would both be %s", p)
+		}
+		out.Files[p] = b
+	}
 	for _, s := range c.Sections {
 		id := sid(s)
+		if s.Unnamed && len(s.Uses) > 0 {
+			return nil, fmt.Errorf("fill: the part %s has no section of its own in a report, but holds %d uses", s.Key, len(s.Uses))
+		}
 		blocks := []ReportBlock{}
 		n := 0
 		narrative := func(body []byte) {
 			n++
 			fn := fmt.Sprintf("sections/%s-%d.md", id, n)
-			out.Files[fn] = body
+			put(fn, body)
 			blocks = append(blocks, ReportBlock{Type: "narrative", File: fn})
 		}
 		for _, key := range s.Uses {
@@ -131,13 +143,13 @@ func Fill(c *Composed, results map[string]Answer) (*Filled, error) {
 			case u.Form == "text" && u.Content != nil:
 				narrative(u.Content.Bytes)
 			case u.Form == "table" && u.Content != nil:
-				out.Files["tables/"+base] = u.Content.Bytes
+				put("tables/"+base, u.Content.Bytes)
 				blocks = append(blocks, ReportBlock{Type: "table", File: "tables/" + base, Caption: cp})
 			case u.Form == "image" && u.Content != nil:
-				out.Files["images/"+base] = u.Content.Bytes
+				put("images/"+base, u.Content.Bytes)
 				blocks = append(blocks, ReportBlock{Type: "image", File: "images/" + base, Caption: cp})
 			case u.Form == "diagram" && u.Content != nil:
-				out.Files["diagrams/"+base] = u.Content.Bytes
+				put("diagrams/"+base, u.Content.Bytes)
 				blocks = append(blocks, ReportBlock{Type: "diagram", File: "diagrams/" + base, Caption: cp})
 			case u.Form == "table" && ans != nil:
 				if len(ans.Results.Bindings) == 0 && u.Empty == "omit" {
@@ -147,7 +159,7 @@ func Fill(c *Composed, results map[string]Answer) (*Filled, error) {
 				if err != nil {
 					return nil, fmt.Errorf("fill: %s: %v", u.Key, err)
 				}
-				out.Files["tables/"+stem+".json"] = t
+				put("tables/"+stem+".json", t)
 				blocks = append(blocks, ReportBlock{Type: "table", File: "tables/" + stem + ".json", Caption: cp})
 			case u.Form == "tree" && ans != nil:
 				if len(ans.Results.Bindings) == 0 && u.Empty == "omit" {
@@ -157,7 +169,7 @@ func Fill(c *Composed, results map[string]Answer) (*Filled, error) {
 				if err != nil {
 					return nil, fmt.Errorf("fill: %s: %v", u.Key, err)
 				}
-				out.Files["diagrams/"+stem+".json"] = t
+				put("diagrams/"+stem+".json", t)
 				empty := u.Caption
 				blocks = append(blocks, ReportBlock{Type: "image", File: "images/" + stem + ".png", Caption: &empty,
 					Source: "diagrams/" + stem + ".json"})
@@ -176,6 +188,9 @@ func Fill(c *Composed, results map[string]Answer) (*Filled, error) {
 			out.Report.Sections = append(out.Report.Sections, ReportSection{ID: id, Heading: s.Heading, Level: s.Level,
 				Blocks: blocks, Rules: rules})
 		}
+	}
+	if clash != nil {
+		return nil, clash
 	}
 	return out, nil
 }

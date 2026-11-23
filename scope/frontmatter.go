@@ -26,10 +26,16 @@ func (m *ymap) get(k string) (any, bool) {
 	return v, ok
 }
 
+// str is a scalar as text: a number such as id: 10 is the text "10".
 func (m *ymap) str(k string) string {
 	v, _ := m.get(k)
-	s, _ := v.(string)
-	return s
+	switch x := v.(type) {
+	case string:
+		return x
+	case int:
+		return strconv.Itoa(x)
+	}
+	return ""
 }
 
 func (m *ymap) set(k string, v any) error {
@@ -47,6 +53,7 @@ var frontRe = regexp.MustCompile(`(?s)^---\n(.*?)\n---\n?(.*)$`)
 
 // splitFront splits a file into its frontmatter and its body. No frontmatter: an empty map.
 func splitFront(text string) (*ymap, string, error) {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
 	m := frontRe.FindStringSubmatch(text)
 	if m == nil {
 		return newYmap(), text, nil
@@ -162,7 +169,7 @@ func parseBlock(lines []yline, indent int) (*ymap, []yline, error) {
 			lines = rest
 			continue
 		}
-		val, rest, err := parseFlow(v)
+		val, rest, err := parseValue(v, false)
 		if err != nil {
 			return nil, nil, fmt.Errorf("line %d: %v", l.n, err)
 		}
@@ -186,8 +193,12 @@ func cutKey(s string) (string, string, bool) {
 	return m[1], strings.TrimSpace(m[2]), true
 }
 
-// parseFlow reads one value from the start of s and returns the rest.
-func parseFlow(s string) (any, string, error) {
+// parseFlow reads one value inside a flow collection, where , ] and } end a plain scalar.
+func parseFlow(s string) (any, string, error) { return parseValue(s, true) }
+
+// parseValue reads one value from the start of s and returns the rest. At block level a plain
+// scalar runs to the end of the line, commas and brackets included, as in YAML.
+func parseValue(s string, inFlow bool) (any, string, error) {
 	s = strings.TrimLeft(s, " ")
 	switch {
 	case strings.HasPrefix(s, "{"):
@@ -258,10 +269,12 @@ func parseFlow(s string) (any, string, error) {
 		}
 		return nil, "", fmt.Errorf("a quoted string is not closed: %q", s)
 	}
-	// a plain scalar runs to a flow indicator; inside a flow collection to , ] or }
-	end := strings.IndexAny(s, ",]}")
-	if end < 0 {
-		end = len(s)
+	// a plain scalar runs to the end of the line; inside a flow collection to , ] or }
+	end := len(s)
+	if inFlow {
+		if i := strings.IndexAny(s, ",]}"); i >= 0 {
+			end = i
+		}
 	}
 	v := strings.TrimSpace(s[:end])
 	if v == "" {

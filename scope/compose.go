@@ -183,7 +183,7 @@ func Compose(req ComposeRequest) (*Composed, []Need, error) {
 	if req.Subject.IRI == "" {
 		return nil, nil, refuse("subject", "the subject needs an iri")
 	}
-	x := &composer{req: req, pkgs: map[string]*pkgView{}, needKeys: map[string]bool{}, out: &Composed{
+	x := &composer{req: req, pkgs: map[string]*pkgView{}, needKeys: map[string]bool{}, secKeys: map[string]bool{}, out: &Composed{
 		Schema: ComposedSchema, Inputs: map[string]ComposedInput{}}}
 	sub := req.Subject
 	for _, n := range sortedKeys(req.Inputs) {
@@ -216,6 +216,7 @@ type composer struct {
 	out      *Composed
 	needs    []Need
 	needKeys map[string]bool
+	secKeys  map[string]bool
 }
 
 // subjectRef is a composition's subject as far as it is known: a subject bound from a var gives the
@@ -347,7 +348,17 @@ func (x *composer) composition(fromPkg string, ref Ref, bound map[string]Term, a
 			return refuse("param", "%s: the param %s is not bound", id, k)
 		}
 	}
-	state, errs := ValidateState(c, at.state)
+	parts, err := x.fromInputs(&frame{id: id, c: c}, c.Parts)
+	if err != nil {
+		return err
+	}
+	expanded := c
+	expanded.Parts = nil
+	for _, ip := range parts {
+		expanded.Parts = append(expanded.Parts, ip.Part)
+	}
+	// the reader's state is keyed by the parts as the reader sees them: an input's parts spliced in
+	state, errs := ValidateState(expanded, at.state)
 	for _, e := range errs {
 		if at.parentSection != "" {
 			e.Key = at.parentSection + ":" + e.Key
@@ -359,10 +370,6 @@ func (x *composer) composition(fromPkg string, ref Ref, bound map[string]Term, a
 	x.out.Compositions = append(x.out.Compositions, ComposedComposition{Key: f.key, Package: pkgName, Name: ref.Name,
 		Hash: f.hash, Kind: c.Kind, Vars: state.Vars})
 
-	parts, err := x.fromInputs(f, c.Parts)
-	if err != nil {
-		return err
-	}
 	ids := map[string]bool{}
 	var walk func(ps []Part) error
 	walk = func(ps []Part) error {
@@ -465,6 +472,10 @@ func (x *composer) part(f *frame, input string, pt Part, i, level int, parent st
 		}
 		return nil
 	}
+	if x.secKeys[key] {
+		return refuse("part", "%s: two parts have the key %s (a part's own child and a part of the composition it nests?)", f.id, key)
+	}
+	x.secKeys[key] = true
 	sec := Section{Key: key, ID: pt.ID, Heading: pt.Heading, Level: level, Parent: parent, Composition: f.key,
 		Rules: pt.Rules, Unnamed: pt.Unnamed, Input: input}
 	if pt.Unnamed {
@@ -513,9 +524,17 @@ func (x *composer) nested(f *frame, pt Part, key string, level int, sc scope, st
 		if k == "subject" {
 			name := strings.TrimPrefix(src, "var.")
 			if name == src {
-				t, _, err := x.source(f, src, sc)
+				t, w, err := x.source(f, src, sc)
 				if err != nil {
-					return err
+					return refuse("param", "%s/%s: params.subject: %v", f.id, pt.ID, err)
+				}
+				if w != "" {
+					s := &x.out.Sections[len(x.out.Sections)-1]
+					s.Waiting = append(s.Waiting, w)
+					return nil
+				}
+				if t.Type != "uri" {
+					return refuse("subject-from-var", "%s/%s: params.subject binds %s, a %s; a subject is an IRI", f.id, pt.ID, src, t.Type)
 				}
 				sub = &subjectRef{iri: &t, s: Subject{IRI: t.Value}}
 				continue
@@ -546,8 +565,12 @@ func (x *composer) nested(f *frame, pt Part, key string, level int, sc scope, st
 		bound[k] = t
 	}
 	before := len(x.out.Compositions)
+	rel := key // ValidateState keys nested states by the part path inside this composition
+	if f.key != "" {
+		rel = strings.TrimPrefix(key, f.key+"/")
+	}
 	err = x.composition(f.pkg.name, ref, bound, frameAt{parentSection: key, depth: f.depth + 1,
-		level: level + 1, chain: f.chain, subject: sub, state: state.Nested[key]})
+		level: level + 1, chain: f.chain, subject: sub, state: state.Nested[rel]})
 	if err != nil {
 		return err
 	}
@@ -735,6 +758,9 @@ func (x *composer) use(f *frame, input string, u Use, si int, sc scope, idx, ori
 		raw := u.Options[k]
 		var s string
 		if json.Unmarshal(raw, &s) == nil && strings.HasPrefix(s, "var.") {
+			if _, declared := f.c.Vars[strings.TrimPrefix(s, "var.")]; !declared {
+				return refuse("var", "%s: option %s reads %s, which %s does not declare", key, k, s, f.id)
+			}
 			v, ok := f.vars[strings.TrimPrefix(s, "var.")]
 			if !ok {
 				waiting[s] = true
@@ -755,7 +781,7 @@ func (x *composer) use(f *frame, input string, u Use, si int, sc scope, idx, ori
 			cu.Scope = s
 		case json.Unmarshal(u.Scope, &from) == nil && from.From != "":
 			in := x.req.Inputs[from.From]
-			if in == nil || in.Chapters == nil || in.Chapters.Scopes[from.Slot] == "" {
+			if !has(f.c.Inputs, from.From) || in == nil || in.Chapters == nil || in.Chapters.Scopes[from.Slot] == "" {
 				return refuse("unknown-ref", "%s: no scope %s in the input %s", key, from.Slot, from.From)
 			}
 			cu.Scope = in.Chapters.Scopes[from.Slot]
@@ -893,10 +919,15 @@ func refineDefault(r Refine) (Term, error) {
 	var s string
 	if err := json.Unmarshal(def, &s); err != nil {
 		var n json.Number
-		if json.Unmarshal(def, &n) == nil {
-			return Term{Type: "literal", Value: n.String(), Datatype: xsdInteger}, nil
+		d := json.NewDecoder(strings.NewReader(string(def)))
+		d.UseNumber()
+		if d.Decode(&n) != nil {
+			return Term{}, fmt.Errorf("the default %s is not a value", string(def))
 		}
-		return Term{}, fmt.Errorf("the default %s is not a value", string(def))
+		if _, err := n.Int64(); err != nil || (r.Type != "" && r.Type != "integer") {
+			return Term{}, fmt.Errorf("the default %s is not a %s", string(def), orInteger(r.Type))
+		}
+		return Term{Type: "literal", Value: n.String(), Datatype: xsdInteger}, nil
 	}
 	switch r.Type {
 	case "iri":
@@ -1052,4 +1083,11 @@ func varTerm(d VarDecl, v json.RawMessage) (Term, error) {
 		return Term{Type: "uri", Value: contentIRI(s)}, nil
 	}
 	return Term{Type: "literal", Value: s}, nil
+}
+
+func orInteger(t string) string {
+	if t == "" {
+		return "string or integer"
+	}
+	return t
 }

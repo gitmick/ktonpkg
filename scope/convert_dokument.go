@@ -1,6 +1,7 @@
 package scope
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -229,6 +230,17 @@ func ConvertDokument(dir string) (*DokumentConversion, error) {
 					if caption != "" {
 						u.Caption = caption
 					}
+					// a use id is unique in its part, the eachPart uses included
+					taken := map[string]bool{}
+					for _, e := range c.EachPart {
+						taken[e.ID] = true
+					}
+					for _, b := range part.Blocks {
+						taken[b.ID] = true
+					}
+					for i := 2; taken[u.ID]; i++ {
+						u.ID = fmt.Sprintf("%s-%d", ref, i)
+					}
 					part.Blocks = append(part.Blocks, *u)
 				}
 			case "table", "image", "diagram":
@@ -237,6 +249,10 @@ func ConvertDokument(dir string) (*DokumentConversion, error) {
 					return nil, fmt.Errorf("%s: {{%s: %s}}: %w", name, kind, ref, err)
 				}
 				p := "content/" + kind + "s/" + path.Base(ref)
+				if old, ok := c.Files[p]; ok && !bytes.Equal(old, b) {
+					return nil, fmt.Errorf("%s: {{%s: %s}}: another %s of this document has the name %s; report-v2 keeps one file per name",
+						name, kind, ref, kind, path.Base(ref))
+				}
 				c.Files[p] = b
 				part.Blocks = append(part.Blocks, Use{Use: jsonString(kind), File: p, Caption: caption})
 				rep.Carried = append(rep.Carried, ConversionNote{What: "{{" + kind + ": " + ref + "}}", Where: id, As: kind + " use with a content file"})
