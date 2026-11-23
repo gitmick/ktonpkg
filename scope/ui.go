@@ -194,6 +194,9 @@ type Part struct {
 	Emits       map[string]string `json:"emits,omitempty"`
 	Every       *Every            `json:"every,omitempty"`
 	Layout      *Layout           `json:"layout,omitempty"` // arranges this part's own parts
+	// Unnamed marks a part the converter inserted for a level jump (F12): it holds parts, fill
+	// writes no section for it, and its children keep their depth.
+	Unnamed bool `json:"unnamed,omitempty"`
 }
 
 // Use places a block.
