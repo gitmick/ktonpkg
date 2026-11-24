@@ -39,7 +39,7 @@ import (
 
 func main() {
 	if len(os.Args) < 3 {
-		fail("usage: scope from-bundle|inspect|view|seal|add-run|install|migrate|templates|verticle|tool|coverage|spectrum-check|union …")
+		fail("usage: scope from-bundle|inspect|view|seal|add-run|install|migrate|templates|verticle|tool|coverage|spectrum-check|union|convert …")
 	}
 	args, keyPath := flag(os.Args[2:], "--key")
 	args, onlyMeasured := boolFlag(args, "--only-measured")
@@ -265,8 +265,26 @@ func main() {
 			fail("scope union <ziel> <wurzel>… [--names <names.json>]")
 		}
 		check(writeUnion(args[0], args[1:], namesPath))
+	case "convert":
+		if len(args) != 3 || args[0] != "dokument" {
+			fail("scope convert dokument <documents/<ID>> <out>: the document's chapters as a composition input (chapters.json, content, queries, manifest.json) and CONVERT.json")
+		}
+		c, err := scope.ConvertDokument(args[1])
+		check(err)
+		files, err := c.InputFiles()
+		check(err)
+		for p, b := range files {
+			dst := filepath.Join(args[2], filepath.FromSlash(p))
+			check(os.MkdirAll(filepath.Dir(dst), 0o755))
+			check(os.WriteFile(dst, b, 0o644))
+		}
+		rep, err := json.MarshalIndent(c.Report, "", "  ")
+		check(err)
+		check(os.WriteFile(filepath.Join(args[2], "CONVERT.json"), append(rep, '\n'), 0o644))
+		emit(map[string]any{"document": c.ID, "class": c.Class, "files": len(files), "eachPart": c.EachPart,
+			"classComposition": scope.ClassComposition(c.Class, c.EachPart), "notCarried": c.Report.NotCarried, "unnamed": c.Report.Unnamed})
 	default:
-		fail("unbekannt: " + os.Args[1])
+		fail("unknown: " + os.Args[1])
 	}
 }
 
