@@ -47,6 +47,9 @@ func (r *Revision) WriteViewTo(dir string) (string, error) {
 		switch c.Predicate {
 		case Requires:
 			v := value(c)
+			if str(v["package"]) != "" {
+				break // a package the revision needs, not a tool requirement of the ray
+			}
 			requires = append(requires, ktonpkg.Requirement{Kind: str(v["kind"]), Spectrum: str(c.Object["id"]),
 				Name: str(v["name"])})
 		case PartOf:
@@ -119,6 +122,8 @@ func predicateName(p string) string {
 		return "hasRationale"
 	case SealPredicate:
 		return "sealedAt"
+	case SourcePredicate:
+		return "hadPrimarySource"
 	}
 	return p
 }
