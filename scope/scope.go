@@ -97,6 +97,9 @@ type Options struct {
 	// OnlyMeasured lässt beim Überführen die Referenzausgaben und Dokumente des alten Pakets weg,
 	// weil sie mit den Läufen nachkommen, die sie erzeugt haben (Revision.AddRun).
 	OnlyMeasured bool
+	// Source is what BuildVerticle records as the revision's source. Without it, the git state of
+	// the source folder (GitSource).
+	Source *Source
 }
 
 // Create legt ein Paket an: den Seed, der das Dokument nennt.

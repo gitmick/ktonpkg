@@ -210,6 +210,16 @@ func main() {
 		if id, err := r.RayID(); err == nil {
 			out["ray"] = id
 		}
+		source, err := r.Source()
+		check(err)
+		if source != nil {
+			out["source"] = source
+		}
+		qs, err := r.PackageRequires()
+		check(err)
+		if len(qs) > 0 {
+			out["requires"] = qs
+		}
 		emit(out)
 	case "tool":
 		args, src := flag(args, "--src")

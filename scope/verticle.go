@@ -291,6 +291,12 @@ func (r *Revision) VerticleProblems() []string {
 		}
 	}
 	out = append(out, r.uiProblems(qs, ts, cs, vs, ray)...)
+	out = append(out, r.packageRequireProblems()...)
+	if src, err := r.Source(); err != nil {
+		add("%v", err)
+	} else if src != nil {
+		out = append(out, src.Problems()...)
+	}
 	return out
 }
 
@@ -330,6 +336,10 @@ func sortedKeys[T any](m map[string]T) []string {
 //	<src>/ui/compositions/<n>.json Composition
 //	<src>/content/<path>          what compositions show, as content/<path>
 //	<src>/viewers/<viewer>/…      a viewer tree the package carries (pinned at <package>@<label>)
+//	<src>/requires.json           optional: the packages it needs (ParseRequires)
+//
+// The revision names its source (Revision.Source): opt.Source if given, else the git state of <src>
+// (GitSource); a folder outside git names none.
 //
 // Into an existing package of the same name it adds the revision (the label must be new). It refuses
 // to seal a revision whose declarations do not hold together (VerticleProblems).
@@ -417,6 +427,28 @@ func BuildVerticle(dir, name, label, src string, key ed25519.PrivateKey, opt Opt
 	}
 	if n == 0 {
 		return nil, nil, fmt.Errorf("%s holds nothing of a verticle", src)
+	}
+	if body, err := os.ReadFile(filepath.Join(src, RequiresFile)); err == nil {
+		qs, err := ParseRequires(body)
+		if err != nil {
+			return nil, nil, err
+		}
+		if err := r.RequirePackages(qs); err != nil {
+			return nil, nil, fmt.Errorf("%s: %w", RequiresFile, err)
+		}
+	} else if !os.IsNotExist(err) {
+		return nil, nil, err
+	}
+	source := opt.Source
+	if source == nil {
+		if source, err = GitSource(src); err != nil {
+			return nil, nil, err
+		}
+	}
+	if source != nil {
+		if err := r.SetSource(*source); err != nil {
+			return nil, nil, fmt.Errorf("source: %w", err)
+		}
 	}
 	if probs := append(r.TemplateProblems(), r.VerticleProblems()...); len(probs) > 0 {
 		return nil, nil, fmt.Errorf("the verticle does not hold together: %s", strings.Join(probs, "; "))
