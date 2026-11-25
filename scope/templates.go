@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/gitmick/ktonpkg"
 )
 
 // BuildTemplates legt ein Paket des Template-Profils an: die Claim-Templates aus templateDir
@@ -28,7 +30,7 @@ func BuildTemplates(dir, name, label, templateDir, queryDir string, key ed25519.
 		if src == "" {
 			return 0, nil
 		}
-		files, err := filepath.Glob(filepath.Join(src, "*"+ext))
+		files, err := ktonpkg.NamedFiles(src, ext)
 		if err != nil {
 			return 0, err
 		}

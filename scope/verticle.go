@@ -369,7 +369,7 @@ func BuildVerticle(dir, name, label, src string, key ed25519.PrivateKey, opt Opt
 		{"ui/blocks", ".json", r.AddBlock},
 		{"ui/compositions", ".json", r.AddComposition},
 	} {
-		files, err := filepath.Glob(filepath.Join(src, part.dir, "*"+part.ext))
+		files, err := ktonpkg.NamedFiles(filepath.Join(src, part.dir), part.ext)
 		if err != nil {
 			return nil, nil, err
 		}
