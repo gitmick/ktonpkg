@@ -286,6 +286,13 @@ func TestBuildTool_Refuses(t *testing.T) {
 			return r
 		}, want: "ghost"},
 		"a carried licence": {files: map[string]string{"requirements/licence.lic": "SECRET"}, want: "hidden licence"},
+		"a normaliser image not pinned": {edit: func(m map[string]any) {
+			n := m["normalizer"].(map[string]any)
+			n["image"], n["command"] = "oci://docker.io/library/busybox:latest", "sh\n<command-file>"
+		}, want: "normalizer image"},
+		"a normaliser image without a command": {edit: func(m map[string]any) {
+			m["normalizer"].(map[string]any)["image"] = testToolImage
+		}, want: "normalizer command"},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -335,5 +342,29 @@ func TestBuildTool_BuildRecordMustNameTheImage(t *testing.T) {
 	_, _, err = BuildTool(filepath.Join(t.TempDir(), "jam-r"), "v1", toolSrc(t, build, files), referenceRuns(r), newKey(t), Options{})
 	if err == nil || !strings.Contains(err.Error(), "image digest") {
 		t.Fatalf("want a refusal naming the image digest, got %v", err)
+	}
+}
+
+// <output> in the frame is the member's output (nmfe75 <ctl> <lst>); a normaliser with its own image
+// and command runs there, not under the tool's frame.
+func TestBuildTool_OutputInTheFrameAndAnOwnNormalizer(t *testing.T) {
+	busybox := "oci://docker.io/library/busybox@sha256:" + strings.Repeat("2", 64)
+	src := toolSrc(t, func(m map[string]any) {
+		m["command"] = "Rscript\n<command-file>\n<output>"
+		n := m["normalizer"].(map[string]any)
+		n["image"], n["command"] = busybox, "sh\n<command-file>"
+	}, nil)
+	_, r, err := BuildTool(filepath.Join(t.TempDir(), "jam-r"), "v1", src, referenceRuns(newRunner(t)), newKey(t), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	call, err := r.MemberInvocation("lm")
+	if err != nil || strings.Join(call.Argv, " ") != "Rscript lm.R lm.out" {
+		t.Fatalf("argv: %+v %v", call, err)
+	}
+	ray, _ := r.Ray()
+	st := ray.Step("fences")
+	if st == nil || st.Protocol.Image != busybox || st.Protocol.Command.Args != "sh\n<command-file>\noutput\nnormalized.out" {
+		t.Fatalf("the normaliser step: %+v", st)
 	}
 }

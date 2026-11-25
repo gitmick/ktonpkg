@@ -1,0 +1,18 @@
+{
+  "name": "nonmem-7.5",
+  "of": "NONMEM 7.5.1 with PsN 5.4.0, image scinteco/improve-docker-tool psn5.4.0-nonmem751 (TQ D4)",
+  "image": "oci://docker.io/scinteco/improve-docker-tool@sha256:877b49a5abb323377c947e01bd3bbdf646e0d97142ee54bc14a118fac1160f7a",
+  "command": "nmfe75\n<command-file>\n<output>",
+  "programs": ["nmfe75"],
+  "hidden": [{"name": "nonmem.lic", "target": "/opt/nm/license/nonmem.lic"}],
+  "members": [
+    {"name": "theo-run1", "file": "members/theo-run1/run1.ctl", "inputs": ["members/theo-run1/nm_data.csv"],
+     "output": "run1.lst", "verifies": ["NM-IQ-1", "NM-IQ-2", "NM-OQ-1"]}
+  ],
+  "normalizer": {"id": "normalize", "file": "steps/normalize/normalize-nonmem.sh", "hole": "in", "output": "normalized",
+    "image": "oci://docker.io/library/busybox@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec",
+    "command": "sh\n<command-file>",
+    "rationale": "spectra/nonmem: blanks only what changes from run to run (dates, licence lines, elapsed and CPU times); numbers, version and model stay"},
+  "docs": ["requirements"],
+  "improve": {"instance": "nonmem_7.5 docker", "runServer": "default", "toolType": "Nonmem", "command": "nmfe75"}
+}

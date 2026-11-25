@@ -74,6 +74,12 @@ type ToolNormalizer struct {
 	Hole      string `json:"hole"`
 	Output    string `json:"output"`
 	Rationale string `json:"rationale,omitempty"`
+	// Image and Command run the normaliser somewhere other than the tool: a NONMEM output is
+	// normalised by a shell script in pinned busybox, not by nmfe75. Both or neither; without them it
+	// runs in the tool's image under the tool's command frame. The hole and the output are appended
+	// to Command as they are to the tool's frame.
+	Image   string `json:"image,omitempty"`
+	Command string `json:"command,omitempty"`
 }
 
 // ImproveDefaults say how the improve backend sets the tool up (D1); other backends ignore them.
@@ -143,6 +149,14 @@ func LoadToolSource(src string) (*ToolSource, error) {
 	}
 	if len(s.Members) == 0 {
 		probs = append(probs, "no members")
+	}
+	if n := s.Normalizer; n != nil && (n.Image != "" || n.Command != "") {
+		if !pinnedImage.MatchString(n.Image) {
+			probs = append(probs, fmt.Sprintf("normalizer image %q is not oci://<repo>@sha256:<hex>", n.Image))
+		}
+		if !strings.Contains(n.Command, "<command-file>") {
+			probs = append(probs, "normalizer command does not name <command-file>")
+		}
 	}
 	if len(s.Programs) == 0 {
 		probs = append(probs, "no programs (the argv[0]s the tool serves)")
@@ -233,8 +247,12 @@ func BuildTool(dir, label, src string, runs ReferenceRuns, key ed25519.PrivateKe
 		}
 		h := core.HashBytes(body)
 		bodies[h] = body
+		image, frame := s.Image, s.Command
+		if n.Image != "" {
+			image, frame = n.Image, n.Command
+		}
 		ray.Steps = append(ray.Steps, ktonpkg.Step{ID: n.ID, Label: "Normalizer", Rationale: n.Rationale,
-			Protocol: ktonpkg.Protocol{Image: s.Image, Command: &ktonpkg.Command{Args: s.Command + "\n" + n.Hole + "\n" + n.Output}},
+			Protocol: ktonpkg.Protocol{Image: image, Command: &ktonpkg.Command{Args: frame + "\n" + n.Hole + "\n" + n.Output}},
 			Inputs: []ktonpkg.Input{{Slot: path.Base(n.File), Path: n.File, Hash: h, Variable: "command-file"},
 				{Slot: n.Hole, From: ktonpkg.FromHole + n.Hole}},
 			Outputs: []string{n.Output}})
@@ -377,7 +395,8 @@ func (r *Revision) Hidden() ([]HiddenConfig, error) {
 }
 
 // MemberCall is how one member runs: the argv with the command frame rendered (each <command-file>
-// replaced by its slot), the files staged beside it (slot -> hash) and the output it writes.
+// replaced by its slot, <output> by the member's output, as nmfe75 <ctl> <lst> needs it), the files
+// staged beside it (slot -> hash) and the output it writes.
 type MemberCall struct {
 	Argv   []string          `json:"argv"`
 	Inputs map[string]string `json:"inputs"`
@@ -412,6 +431,8 @@ func (r *Revision) MemberInvocation(name string) (*MemberCall, error) {
 			if strings.HasPrefix(l, "<") && strings.HasSuffix(l, ">") {
 				if v, ok := vars[l[1:len(l)-1]]; ok {
 					l = v
+				} else if l == "<output>" && len(st.Outputs) > 0 {
+					l = st.Outputs[0]
 				}
 			}
 			inv.Argv = append(inv.Argv, l)
