@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/gitmick/ktonpkg"
 )
 
 // ConvertDokument reads one document of qm-packages (documents/<ID>/: dokument.md and kapitel/*.md)
@@ -145,7 +147,10 @@ func ConvertDokument(dir string) (*DokumentConversion, error) {
 		}
 	}
 
-	files, _ := filepath.Glob(filepath.Join(dir, "kapitel", "*.md"))
+	files, err := ktonpkg.NamedFiles(filepath.Join(dir, "kapitel"), ".md")
+	if err != nil {
+		return nil, err
+	}
 	if sorted := byNumber(files); !equalStrings(sorted, textSorted(files)) {
 		rep.NotCarried = append(rep.NotCarried, ConversionNote{What: "kapitel order",
 			Why: "the chapters are taken in the order of their number; zusammensetzen sorts the names as text, which puts 100- before 11-"})

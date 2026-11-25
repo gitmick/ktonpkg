@@ -36,7 +36,7 @@ func main() {
 	normalizer, err := nonmem.Ref()
 	fail(err)
 	model, data := ktonpkg.HashOf(read("model.ctl")), ktonpkg.HashOf(read("data.csv"))
-	names, err := filepath.Glob(filepath.Join(ref, "normalized", "*"))
+	names, err := ktonpkg.NamedFiles(filepath.Join(ref, "normalized"), "")
 	fail(err)
 	sort.Strings(names)
 	spec := &ktonpkg.Spectrum{Spectrum: nonmem.Spectrum, Of: nonmem.Of, Normalizer: normalizer}

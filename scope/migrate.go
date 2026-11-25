@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/gitmick/ktonpkg"
 	"kton.dev/plankton/core"
 )
 
@@ -36,7 +37,11 @@ func Migrate(dir string) (bool, error) {
 			}
 		}
 		// Keys a registry kept beside its records (recorded runs, people's signatures) join keys/.
-		if files, _ := filepath.Glob(filepath.Join(old, "keys", "*.pub")); len(files) > 0 {
+		files, err := ktonpkg.NamedFiles(filepath.Join(old, "keys"), ".pub")
+		if err != nil {
+			return false, err
+		}
+		if len(files) > 0 {
 			if err := os.MkdirAll(filepath.Join(dir, KeyDir), 0o755); err != nil {
 				return false, err
 			}
